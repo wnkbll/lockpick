@@ -1,8 +1,4 @@
 # Lockpick
 
-`bash
-goobdye.bat - для YouTube
-`
-`bash
-zapret.bat - для Discord
-`
+ - `goobdye.bat - для YouTube`
+ - `zapret.bat - для Discord`
