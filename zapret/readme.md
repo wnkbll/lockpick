@@ -15,13 +15,14 @@ requirements :
 * `winws.exe` : главный компонент zapret, средство обхода DPI, версия nfqws для windows
 * `preset_russia.cmd` : интерактивный запуск наиболее распространенной стратегии для России
 * `preset_russia_autohostlist.cmd` : интерактивный запуск наиболее распространенной стратегии для России с автоматическим заполнением хостлиста на основе обнаружения блокировок
-* `service_*.cmd` - установка и управление службой windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
-* `task_*.cmd` - установка и управление запланированными задачами windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
-* `reload_lists.cmd` - заставить winws перечитать хост и ip листы без перезапуска. не работает со службами и задачами.
-* `killall.exe` - программа из cygwin, используемая в reload_lists.cmd
-* `cygwin\cygwin.cmd` - запуск командной строки cygwin под текущим пользователем
-* `cygwin\cygwin-admin.cmd` - запуск командной строки cygwin под администратором
-* `blockcheck\blockcheck.cmd` - анализатор способов обхода DPI. Запускать только с остановленным zapret и другими средствами обхода DPI !
+* `service_*.cmd` : установка и управление службой windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
+* `task_*.cmd` : установка и управление запланированными задачами windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
+* `windivert_delete.cmd` : остановить и удалить драйвер windivert
+* `killall.exe` : программа из cygwin для посылки unix сигналов winws
+* `elevator.exe` : запускает программы от имени администратора
+* `cygwin\cygwin.cmd` : запуск командной строки cygwin под текущим пользователем
+* `cygwin\cygwin-admin.cmd` : запуск командной строки cygwin под администратором
+* `blockcheck\blockcheck.cmd` : анализатор способов обхода DPI. Запускать только с остановленным zapret и другими средствами обхода DPI !
 
 ### быстрый старт
 
@@ -42,8 +43,16 @@ requirements :
 1) запустите `arm64/install_arm64.cmd`
 2) перезагрузите систему, если режим testsigning не был включен ранее. надпись "тестовый режим" должна быть на рабочем столе справа внизу.
 
+### WIN7 подготовка
+Если windivert не работает как есть запустите `win7/install_win7.cmd`. Или накатите обновления ESU.
+
 ### АНТИВИРУСЫ
- cygwin и windivert могут вызвать реакцию антивируса. Вирусов там нет, проблема в самом антивирусе.
+windivert может вызвать реакцию антивируса.
+windivert - это инструмент для перехвата и фильтрации трафика, необходимый для работы zapret.
+Замена iptables и NFQUEUE в Linux, которых нет под Windows.
+Он может использоваться как хорошими, так и плохими программами, но сам по себе не является вирусом.
+Драйвер windivert64.sys подписан для возможности загрузки в 64-битное ядро windows.
+Но антивирусы склонны относить подобное к классам повышенного риска или хакерским инструментам.
 В случае проблем используйте исключения или выключайте антивирус совсем.
 
 ---
@@ -66,13 +75,14 @@ requirements :
 * `winws.exe` : main zapret component, DPI bypass tool, nfqws version for windows
 * `preset_russia.cmd` : run interactively most common strategy for Russia
 * `preset_russia_autohostlist.cmd` : run interactively most common strategy for Russia with automatic hostlist fill based on blocking discovery
-* `service_*.cmd` - windows service setup and control (non-interactive autostart mode)
-* `task_*.cmd` - scheduled tasks setup and control (non-interactive autostart mode)
-* `reload_lists.cmd` - reload hostlists and ipsets without restarting winws. does not work with tasks or services.
-* `killall.exe` - cygwin tool used in reload_lists.cmd. allows to send signals to winws.
-* `cygwin\cygwin.cmd` - run cygwin prompt with current user privileges
-* `cygwin\cygwin-admin.cmd` - run cygwin prompts with administrator privileges
-* `blockcheck\blockcheck.cmd` - DPI bypass analyzer tool. Run only with zapret and other DPI bypass software stopped !
+* `service_*.cmd` : windows service setup and control (non-interactive autostart mode)
+* `task_*.cmd` : scheduled tasks setup and control (non-interactive autostart mode)
+* `windivert_delete.cmd` : stop and delete windivert driver
+* `killall.exe` : cygwin tool used in reload_lists.cmd. allows to send signals to winws.
+* `elevator.exe` : simple tool to run a program as admin
+* `cygwin\cygwin.cmd` : run cygwin prompt with current user privileges
+* `cygwin\cygwin-admin.cmd` : run cygwin prompts with administrator privileges
+* `blockcheck\blockcheck.cmd` : DPI bypass analyzer tool. Run only with zapret and other DPI bypass software stopped !
 
 For full description refer to `docs/windows.txt` in the main repository.
 
@@ -80,6 +90,9 @@ For full description refer to `docs/windows.txt` in the main repository.
 1) run `arm64/install_arm64.cmd`
 2) reboot if testsigning mode is not already enabled. "test mode" text should be present in the right bottom corner of the screen.
 
+### WIN7 подготовка
+If windivert cannot start as is run `win7/install_win7.cmd`. Or install ESU updates.
+
 ### ANTIVIRUS WARNING
-cygwin and windivert may cause antivirus reaction. They are not viruses, your antivirus is insane.
+windivert may cause antivirus reaction. They are not viruses, your antivirus is insane.
 Use exceptions or disable AV completely if you are affected.

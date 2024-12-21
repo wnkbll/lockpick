@@ -20,7 +20,7 @@ goto :ex
 :build
 echo OS build number %BUILD%
 if !BUILD! GEQ 22000 (
- wscript ..\tools\elevator.vbs "%~dpf0" install
+ "%~dp0..\tools\elevator" "%~dpf0" install
  goto :eof
 ) else (
  echo only windows 11 or higher is supported
