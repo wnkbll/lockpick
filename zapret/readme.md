@@ -28,7 +28,7 @@ requirements :
 
 1) отключите все средства обхода блокировок, включая сам zapret
 2) запустите `blockcheck/blockcheck.cmd` для поиска стратегий обхода DPI
-3) если провайдер подменяет DNS - поменяйте DNS. если перехватывает DNS - используйте шифрованный DNS. затем перезапустите blockcheck.
+3) если провайдер подменяет DNS - поменяйте DNS. если перехватывает DNS - используйте шифрованный DNS.
 4) откройте `blockcheck.log` и найдите там рабочие стратегии (аргументы командной строки winws)
 5) если можете - обьедините стратегии для http, https и quic. это требует знаний как работает обход DPI.
 6) запустите winws с найденными параметрами из zapret-winws от имени администратора
@@ -60,7 +60,7 @@ windivert - это инструмент для перехвата и фильт�
 
 1) disable all DPI bypass software including any VPN and zapret itself
 2) run `blockcheck/blockcheck.cmd` to discover DPI bypass strategies
-3) if your ISP fakes DNS - change DNS. if your ISP redirects DNS - use encrypted DNS. then restart blockcheck.
+3) if your ISP fakes DNS - change DNS. if your ISP redirects DNS - use encrypted DNS.
 4) open `blockcheck.log` and find working winws strategies (command line options)
 5) if you can combine found strategies for http, https, quic. need knowledge how DPI bypass works.
 6) run winws instances as admin from zapret-winws
@@ -90,9 +90,10 @@ For full description refer to `docs/windows.txt` in the main repository.
 1) run `arm64/install_arm64.cmd`
 2) reboot if testsigning mode is not already enabled. "test mode" text should be present in the right bottom corner of the screen.
 
-### WIN7 подготовка
+### WIN7 preparation
 If windivert cannot start as is run `win7/install_win7.cmd`. Or install ESU updates.
 
 ### ANTIVIRUS WARNING
-windivert may cause antivirus reaction. They are not viruses, your antivirus is insane.
+windivert may cause antivirus reaction. It's not a virus, your antivirus is insane.
+It can treat windivert as potential risk or hacker instrument.
 Use exceptions or disable AV completely if you are affected.
