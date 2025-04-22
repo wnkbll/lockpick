@@ -1,6 +1,6 @@
-[submodule "zapret-bolvan"]
-	path = zapret-bolvan
-	url = https://github.com/bol-van/zapret-win-bundle
 [submodule "zapret-flowseal"]
 	path = zapret-flowseal
 	url = https://github.com/Flowseal/zapret-discord-youtube
+[submodule "zapret-wnkbll"]
+	path = zapret-wnkbll
+	url = https://github.com/wnkbll/zapret-wnkbll
