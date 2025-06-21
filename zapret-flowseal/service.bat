@@ -1,5 +1,5 @@
 @echo off
-set "LOCAL_VERSION=1.8.0"
+set "LOCAL_VERSION=1.8.1"
 
 :: External commands
 if "%~1"=="status_zapret" (
@@ -438,9 +438,11 @@ cls
 if not exist "%gameFlagFile%" (
     echo Enabling game filter...
     echo ENABLED > "%gameFlagFile%"
+    call :PrintYellow "Restart the zapret to apply the changes"
 ) else (
     echo Disabling game filter...
     del /f /q "%gameFlagFile%"
+    call :PrintYellow "Restart the zapret to apply the changes"
 )
 
 pause
