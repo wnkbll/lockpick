@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 if [%1] == [install] goto :install
 
 if %PROCESSOR_ARCHITECTURE%==ARM64 (
- FOR /F "tokens=1 skip=1 USEBACKQ" %%B IN (`wmic os get BuildNumber`) do set BUILD=!BUILD!%%B
+ FOR /F "tokens=3 skip=2 USEBACKQ" %%B IN (`reg QUERY "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild`) do set BUILD=!BUILD!%%B
  if defined BUILD (
   goto :build
  ) else (

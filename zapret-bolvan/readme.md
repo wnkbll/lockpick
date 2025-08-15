@@ -13,10 +13,13 @@ requirements :
 
 * `_CMD_ADMIN.cmd` : открыть командную строку под администратором
 * `winws.exe` : главный компонент zapret, средство обхода DPI, версия nfqws для windows
-* `preset_russia.cmd` : интерактивный запуск наиболее распространенной стратегии для России
-* `preset_russia_autohostlist.cmd` : интерактивный запуск наиболее распространенной стратегии для России с автоматическим заполнением хостлиста на основе обнаружения блокировок
+* `preset_russia.cmd` : интерактивный запуск наиболее распространенной стратегии обхода веб-сайтов для России
+* `preset_russia_autohostlist.cmd` : интерактивный запуск наиболее распространенной стратегии обхода веб-сайтов для России с автоматическим заполнением хостлиста на основе обнаружения блокировок
+* `preset_discord_media_stun.cmd` : интерактивный запуск обхода блокировки media части discord и протокола stun на любых портах. может помочь от блокировки звонков в мессенджерах.
+* `preset_wireguard.cmd` : интерактивный запуск обхода блокировки wireguard протокола на любых портах
 * `service_*.cmd` : установка и управление службой windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
 * `task_*.cmd` : установка и управление запланированными задачами windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
+* `enable_tcp_timestamps.cmd` : включить таймштампы tcp. по умолчанию отключены. требуются для ts fooling.
 * `windivert_delete.cmd` : остановить и удалить драйвер windivert
 * `killall.exe` : программа из cygwin для посылки unix сигналов winws
 * `elevator.exe` : запускает программы от имени администратора
@@ -75,8 +78,11 @@ windivert - это инструмент для перехвата и фильт�
 * `winws.exe` : main zapret component, DPI bypass tool, nfqws version for windows
 * `preset_russia.cmd` : run interactively most common strategy for Russia
 * `preset_russia_autohostlist.cmd` : run interactively most common strategy for Russia with automatic hostlist fill based on blocking discovery
+* `preset_discord_media_stun.cmd` : run interactively discord media and stun protocol bypass. may also help with voice and video calls in messengers.
+* `preset_wireguard.cmd` : run interactively wireguard protocol bypass
 * `service_*.cmd` : windows service setup and control (non-interactive autostart mode)
 * `task_*.cmd` : scheduled tasks setup and control (non-interactive autostart mode)
+* `enable_tcp_timestamps.cmd` : enable tcp timestamps. they are disabled by default and required for ts fooling.
 * `windivert_delete.cmd` : stop and delete windivert driver
 * `killall.exe` : cygwin tool used in reload_lists.cmd. allows to send signals to winws.
 * `elevator.exe` : simple tool to run a program as admin

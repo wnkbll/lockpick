@@ -1,2 +1,2 @@
 sc start winws1
-rem sc start winws2
+sc start winws2
