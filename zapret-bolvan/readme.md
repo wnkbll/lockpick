@@ -13,9 +13,7 @@ requirements :
 
 * `_CMD_ADMIN.cmd` : открыть командную строку под администратором
 * `winws.exe` : главный компонент zapret, средство обхода DPI, версия nfqws для windows
-* `preset_russia.cmd` : интерактивный запуск наиболее распространенной стратегии обхода веб-сайтов для России
-* `preset_russia_autohostlist.cmd` : интерактивный запуск наиболее распространенной стратегии обхода веб-сайтов для России с автоматическим заполнением хостлиста на основе обнаружения блокировок
-* `preset_discord_media_stun.cmd` : интерактивный запуск обхода блокировки media части discord и протокола stun на любых портах. может помочь от блокировки звонков в мессенджерах.
+* `preset_example.cmd` : интерактивный запуск стратегии-примера (не является готовым лекарством)
 * `preset_wireguard.cmd` : интерактивный запуск обхода блокировки wireguard протокола на любых портах
 * `service_*.cmd` : установка и управление службой windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
 * `task_*.cmd` : установка и управление запланированными задачами windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
@@ -26,6 +24,7 @@ requirements :
 * `cygwin\cygwin.cmd` : запуск командной строки cygwin под текущим пользователем
 * `cygwin\cygwin-admin.cmd` : запуск командной строки cygwin под администратором
 * `blockcheck\blockcheck.cmd` : анализатор способов обхода DPI. Запускать только с остановленным zapret и другими средствами обхода DPI !
+* `blockcheck\blockcheck-kyber.cmd` : то же самое, но используется CURL с многопакетным TLS Client Hello
 
 ### быстрый старт
 
@@ -76,9 +75,7 @@ windivert - это инструмент для перехвата и фильт�
 
 * `_CMD_ADMIN.cmd` : open command prompt as administrator
 * `winws.exe` : main zapret component, DPI bypass tool, nfqws version for windows
-* `preset_russia.cmd` : run interactively most common strategy for Russia
-* `preset_russia_autohostlist.cmd` : run interactively most common strategy for Russia with automatic hostlist fill based on blocking discovery
-* `preset_discord_media_stun.cmd` : run interactively discord media and stun protocol bypass. may also help with voice and video calls in messengers.
+* `preset_example.cmd` : run interactively example strategy
 * `preset_wireguard.cmd` : run interactively wireguard protocol bypass
 * `service_*.cmd` : windows service setup and control (non-interactive autostart mode)
 * `task_*.cmd` : scheduled tasks setup and control (non-interactive autostart mode)
@@ -89,6 +86,7 @@ windivert - это инструмент для перехвата и фильт�
 * `cygwin\cygwin.cmd` : run cygwin prompt with current user privileges
 * `cygwin\cygwin-admin.cmd` : run cygwin prompts with administrator privileges
 * `blockcheck\blockcheck.cmd` : DPI bypass analyzer tool. Run only with zapret and other DPI bypass software stopped !
+* `blockcheck\blockcheck-kyber.cmd` : use CURL with multi-segment TLS Client Hello
 
 For full description refer to `docs/windows.txt` in the main repository.
 
