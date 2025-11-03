@@ -41,6 +41,8 @@ CURL_MAX_TIME_QUIC=${CURL_MAX_TIME_QUIC:-$CURL_MAX_TIME}
 CURL_MAX_TIME_DOH=${CURL_MAX_TIME_DOH:-2}
 MIN_TTL=${MIN_TTL:-1}
 MAX_TTL=${MAX_TTL:-12}
+MIN_AUTOTTL_DELTA=${MIN_AUTOTTL_DELTA:-1}
+MAX_AUTOTTL_DELTA=${MAX_AUTOTTL_DELTA:-5}
 USER_AGENT=${USER_AGENT:-Mozilla}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
@@ -54,7 +56,7 @@ HDRTEMP=/tmp/zapret-hdr
 NFT_TABLE=blockcheck
 
 DNSCHECK_DNS=${DNSCHECK_DNS:-8.8.8.8 1.1.1.1 77.88.8.1}
-DNSCHECK_DOM=${DNSCHECK_DOM:-pornhub.com ntc.party rutracker.org www.torproject.org bbc.com}
+DNSCHECK_DOM=${DNSCHECK_DOM:-pornhub.com ej.ru rutracker.org www.torproject.org bbc.com}
 DOH_SERVERS=${DOH_SERVERS:-"https://cloudflare-dns.com/dns-query https://dns.google/dns-query https://dns.quad9.net/dns-query https://dns.adguard.com/dns-query https://common.dot.dns.yandex.net/dns-query"}
 DNSCHECK_DIG1=/tmp/dig1.txt
 DNSCHECK_DIG2=/tmp/dig2.txt
@@ -245,7 +247,7 @@ mdig_vars()
 	# $1 - ip version 4/6
 	# $2 - hostname
 
-	hostvar=$(echo $2 | sed -e 's/[\.-]/_/g')
+	hostvar=$(echo $2 | sed -e 's/[\./?&#@%*$^:~=!()+-]/_/g')
 	cachevar=DNSCACHE_${hostvar}_$1
 	countvar=${cachevar}_COUNT
 	eval count=\$${countvar}
@@ -276,17 +278,18 @@ mdig_cache()
 mdig_resolve()
 {
 	# $1 - ip version 4/6
-	# $2 - hostname
+	# $2 - hostname, possibly with uri : rutracker.org/xxx/xxxx
+	local hostvar cachevar countvar count ip n sdom
 
-	local hostvar cachevar countvar count ip n
-	mdig_vars "$@"
+	split_by_separator "$2" / sdom
+	mdig_vars "$1" "$sdom"
 	if [ -n "$count" ]; then
 		n=$(random 0 $(($count-1)))
 		eval ip=\$${cachevar}_$n
 		echo $ip
 		return 0
 	else
-		mdig_cache "$@" && mdig_resolve "$@"
+		mdig_cache "$1" "$sdom" && mdig_resolve "$1" "$sdom"
 	fi
 }
 mdig_resolve_all()
@@ -294,8 +297,10 @@ mdig_resolve_all()
 	# $1 - ip version 4/6
 	# $2 - hostname
 
-	local hostvar cachevar countvar count ip ips n
-	mdig_vars "$@"
+	local hostvar cachevar countvar count ip ips n sdom
+
+	split_by_separator "$2" / sdom
+	mdig_vars "$1" "$sdom"
 	if [ -n "$count" ]; then
 		n=0
 		while [ "$n" -le $count ]; do
@@ -310,7 +315,7 @@ mdig_resolve_all()
 		echo "$ips"
 		return 0
 	else
-		mdig_cache "$@" && mdig_resolve_all "$@"
+		mdig_cache "$1" "$sdom" && mdig_resolve_all "$1" "$sdom"
 	fi
 }
 
@@ -643,15 +648,16 @@ hdrfile_location()
 curl_with_subst_ip()
 {
 	# $1 - domain
-	# $2 - port
-	# $3 - ip
-	# $4+ - curl params
-	local ip="$3"
+	# $2 - uri
+	# $3 - port
+	# $4 - ip
+	# $5+ - curl params
+	local ip="$4"
 	case "$ip" in
 		*:*) ip="[$ip]" ;;
 	esac
-	local connect_to="--connect-to $1::$ip${2:+:$2}" arg
-	shift ; shift ; shift
+	local connect_to="--connect-to $1::$ip${3:+:$3}" arg
+	shift ; shift ; shift; shift
 	[ "$CURL_VERBOSE" = 1 ] && arg="-v"
 	[ "$CURL_CMD" = 1 ] && echo $CURL ${arg:+$arg }$connect_to "$@"
 	ALL_PROXY="$ALL_PROXY" $CURL ${arg:+$arg }$connect_to "$@"
@@ -663,10 +669,13 @@ curl_with_dig()
 	# $3 - port
 	# $4+ - curl params
 	local dom=$2 port=$3
-	local ip=$(mdig_resolve $1 $dom)
+	local sdom suri ip
+
+	split_by_separator "$dom" / sdom suri
+	ip=$(mdig_resolve $1 $sdom)
 	shift ; shift ; shift
 	if [ -n "$ip" ]; then
-		curl_with_subst_ip $dom $port $ip "$@"
+		curl_with_subst_ip "$sdom" "$suri" $port $ip "$@"
 	else
 		return 6
 	fi
@@ -729,7 +738,7 @@ curl_test_https_tls12()
 	# $3 - subst ip
 
 	# do not use tls 1.3 to make sure server certificate is not encrypted
-	curl_probe $1 $2 $HTTPS_PORT "$3" -ISs -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.2 $TLSMAX12 "https://$2" -o /dev/null 2>&1
+	curl_probe $1 $2 $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.2 $TLSMAX12 "https://$2" -o /dev/null 2>&1
 }
 curl_test_https_tls13()
 {
@@ -738,7 +747,7 @@ curl_test_https_tls13()
 	# $3 - subst ip
 
 	# force TLS1.3 mode
-	curl_probe $1 $2 $HTTPS_PORT "$3" -ISs -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.3 $TLSMAX13 "https://$2" -o /dev/null 2>&1
+	curl_probe $1 $2 $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.3 $TLSMAX13 "https://$2" -o /dev/null 2>&1
 }
 
 curl_test_http3()
@@ -747,7 +756,7 @@ curl_test_http3()
 	# $2 - domain name
 
 	# force QUIC only mode without tcp
-	curl_with_dig $1 $2 $QUIC_PORT -ISs -A "$USER_AGENT" --max-time $CURL_MAX_TIME_QUIC --http3-only $CURL_OPT "https://$2" -o /dev/null 2>&1
+	curl_with_dig $1 $2 $QUIC_PORT $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME_QUIC --http3-only $CURL_OPT "https://$2" -o /dev/null 2>&1
 }
 
 ipt_aux_scheme()
@@ -1330,7 +1339,7 @@ pktws_check_domain_http_bypass_()
 	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
 	# $3 - domain
 
-	local ok ttls s f f2 e desync pos fooling frag sec="$2" delta orig splits
+	local ok ttls attls s f f2 e desync pos fooling frag sec="$2" delta orig splits
 	local need_split need_disorder need_fakedsplit need_hostfakesplit need_fakeddisorder need_fake need_wssize
 	local splits_http='method+2 midsld method+2,midsld'
 	local splits_tls='2 1 sniext+1 sniext+4 host+1 midsld 1,midsld 1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1'
@@ -1342,6 +1351,7 @@ pktws_check_domain_http_bypass_()
 	}
 
 	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
+	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
 	need_wssize=1
 	for e in '' '--wssize 1:6'; do
 		need_split=
@@ -1500,7 +1510,7 @@ pktws_check_domain_http_bypass_()
 			ok=0
 			# orig-ttl=1 with start/cutoff limiter drops empty ACK packet in response to SYN,ACK. it does not reach DPI or server.
 			# missing ACK is transmitted in the first data packet of TLS/HTTP proto
-			for delta in 1 2 3 4 5; do
+			for delta in $attls; do
 				for f in '' '--orig-ttl=1 --orig-mod-start=s1 --orig-mod-cutoff=d1'; do
 					pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-ttl=1 --dpi-desync-autottl=-$delta $f $e && ok=1
 					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && break
@@ -1508,7 +1518,7 @@ pktws_check_domain_http_bypass_()
 			done
 			[ "$SCANLEVEL" = force ] && {
 				for orig in 1 2 3; do
-					for delta in 1 2 3 4 5; do
+					for delta in $attls; do
 						pktws_curl_test_update_vary $1 $2 $3 $desync ${orig:+--orig-autottl=+$orig} --dpi-desync-ttl=1 --dpi-desync-autottl=-$delta $e && ok=1
 					done
 					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && break
@@ -1854,6 +1864,9 @@ configure_curl_opt()
 	curl_supports_tls13 && TLS13=1
 	HTTP3=
 	curl_supports_http3 && HTTP3=1
+
+	HTTPS_HEAD=-I
+	[ "$CURL_HTTPS_GET" = 1 ] && HTTPS_HEAD=
 }
 
 linux_ipv6_defrag_can_be_disabled()
@@ -1922,7 +1935,7 @@ ask_params()
 	[ -n "$DOMAINS" ] || {
 		DOMAINS="$DOMAINS_DEFAULT"
 		[ "$BATCH" = 1 ] || {
-			echo "specify domain(s) to test. multiple domains are space separated."
+			echo "specify domain(s) to test. multiple domains are space separated. URIs are supported (rutracker.org/forum/index.php)"
 			printf "domain(s) (default: $DOMAINS) : "
 			read dom
 			[ -n "$dom" ] && DOMAINS="$dom"
@@ -2264,7 +2277,6 @@ sigsilent()
 	unprepare_all
 	exit 1
 }
-
 
 fsleep_setup
 fix_sbin_path
