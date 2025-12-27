@@ -13,10 +13,11 @@ requirements :
 
 * `_CMD_ADMIN.cmd` : открыть командную строку под администратором
 * `winws.exe` : главный компонент zapret, средство обхода DPI, версия nfqws для windows
+* `winws2.exe` : главный компонент zapret2, средство обхода DPI, версия nfqws2 для windows
 * `preset_example.cmd` : интерактивный запуск стратегии-примера (не является готовым лекарством)
+* `preset2_example.cmd` : интерактивный запуск стратегии-примера на базе winws2 (не является готовым лекарством)
 * `preset_wireguard.cmd` : интерактивный запуск обхода блокировки wireguard протокола на любых портах
 * `service_*.cmd` : установка и управление службой windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
-* `task_*.cmd` : установка и управление запланированными задачами windows (режим неинтерактивного автозапуска). НЕ ЗАПУСКАТЬ БЕЗ РЕДАКТИРОВАНИЯ !
 * `enable_tcp_timestamps.cmd` : включить таймштампы tcp. по умолчанию отключены. требуются для ts fooling.
 * `windivert_delete.cmd` : остановить и удалить драйвер windivert
 * `killall.exe` : программа из cygwin для посылки unix сигналов winws
@@ -25,6 +26,8 @@ requirements :
 * `cygwin\cygwin-admin.cmd` : запуск командной строки cygwin под администратором
 * `blockcheck\blockcheck.cmd` : анализатор способов обхода DPI. Запускать только с остановленным zapret и другими средствами обхода DPI !
 * `blockcheck\blockcheck-kyber.cmd` : то же самое, но используется CURL с многопакетным TLS Client Hello
+* `blockcheck\blockcheck2.cmd` : анализатор способов обхода DPI на базе winws2. Запускать только с остановленным zapret и другими средствами обхода DPI !
+* `blockcheck\blockcheck2-kyber.cmd` : то же самое, но используется CURL с многопакетным TLS Client Hello
 
 ### быстрый старт
 
@@ -34,10 +37,8 @@ requirements :
 4) откройте `blockcheck.log` и найдите там рабочие стратегии (аргументы командной строки winws)
 5) если можете - обьедините стратегии для http, https и quic. это требует знаний как работает обход DPI.
 6) запустите winws с найденными параметрами из zapret-winws от имени администратора
-7) `zapret-winws/task_*.cmd` управляют запланированными задачами для автозапуска вместе с windows.
-   `zapret-winws/service_*.cmd` управляет службами windows для автозапуска вместе с windows.
-   выберите один из вариантов, внесите туда параметры winws, при необходимости дублируйте код для поддержки нескольких экземпляров winws.
-   создайте и запустите запланированные задачи. запускать cmd от имени администратора.
+7) `zapret-winws/service_*.cmd` управляет службами windows для автозапуска вместе с windows.
+   внесите туда параметры winws, при необходимости дублируйте код для поддержки нескольких экземпляров winws.
 
 Подробности читайте в основном репозитории в `docs/windows.txt`, `docs/quick_start_windows.txt`
 
@@ -66,19 +67,18 @@ windivert - это инструмент для перехвата и фильт�
 4) open `blockcheck.log` and find working winws strategies (command line options)
 5) if you can combine found strategies for http, https, quic. need knowledge how DPI bypass works.
 6) run winws instances as admin from zapret-winws
-7) `zapret-winws/task_*.cmd` manage scheduled task(s) to auto start winws.
-   `zapret-winws/service_*`.cmd manages windows service(s) to auto start winws.
-   choose one of them. edit .cmd files, add there your command line options. if required - clone the code to support multiple instances.
-   create and run scheduled task as admin
+7) `zapret-winws/service_*`.cmd manages windows service(s) to auto start winws.
+   edit .cmd files, add there your command line options. if required - clone the code to support multiple instances.
 
 ### brief files description
 
 * `_CMD_ADMIN.cmd` : open command prompt as administrator
 * `winws.exe` : main zapret component, DPI bypass tool, nfqws version for windows
+* `winws2.exe` : main zapret2 component, DPI bypass tool, nfqws2 version for windows
 * `preset_example.cmd` : run interactively example strategy
+* `preset2_example.cmd` : run interactively example strategy using winws2
 * `preset_wireguard.cmd` : run interactively wireguard protocol bypass
 * `service_*.cmd` : windows service setup and control (non-interactive autostart mode)
-* `task_*.cmd` : scheduled tasks setup and control (non-interactive autostart mode)
 * `enable_tcp_timestamps.cmd` : enable tcp timestamps. they are disabled by default and required for ts fooling.
 * `windivert_delete.cmd` : stop and delete windivert driver
 * `killall.exe` : cygwin tool used in reload_lists.cmd. allows to send signals to winws.
@@ -87,6 +87,8 @@ windivert - это инструмент для перехвата и фильт�
 * `cygwin\cygwin-admin.cmd` : run cygwin prompts with administrator privileges
 * `blockcheck\blockcheck.cmd` : DPI bypass analyzer tool. Run only with zapret and other DPI bypass software stopped !
 * `blockcheck\blockcheck-kyber.cmd` : use CURL with multi-segment TLS Client Hello
+* `blockcheck\blockcheck2.cmd` : DPI bypass analyzer tool, winws2 based. Run only with zapret and other DPI bypass software stopped !
+* `blockcheck\blockcheck2-kyber.cmd` : use CURL with multi-segment TLS Client Hello
 
 For full description refer to `docs/windows.txt` in the main repository.
 

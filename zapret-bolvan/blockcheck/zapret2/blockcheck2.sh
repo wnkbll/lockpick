@@ -6,6 +6,7 @@ ZAPRET_BASE=${ZAPRET_BASE:-"$EXEDIR"}
 ZAPRET_RW=${ZAPRET_RW:-"$ZAPRET_BASE"}
 ZAPRET_CONFIG=${ZAPRET_CONFIG:-"$ZAPRET_RW/config"}
 ZAPRET_CONFIG_DEFAULT="$ZAPRET_BASE/config.default"
+BLOCKCHECK2D="$ZAPRET_BASE/blockcheck2.d"
 
 CURL=${CURL:-curl}
 
@@ -23,15 +24,15 @@ CURL=${CURL:-curl}
 . "$ZAPRET_BASE/common/fwtype.sh"
 . "$ZAPRET_BASE/common/virt.sh"
 
+TEST_DEFAULT=${TEST_DEFAULT:-standard}
 DOMAINS_DEFAULT=${DOMAINS_DEFAULT:-rutracker.org}
-QNUM=${QNUM:-59780}
+QNUM=${QNUM:-59781}
 SOCKS_PORT=${SOCKS_PORT:-1993}
-TPWS_UID=${TPWS_UID:-1}
-TPWS_GID=${TPWS_GID:-3003}
-NFQWS=${NFQWS:-${ZAPRET_BASE}/nfq/nfqws}
-DVTWS=${DVTWS:-${ZAPRET_BASE}/nfq/dvtws}
-WINWS=${WINWS:-${ZAPRET_BASE}/nfq/winws}
-TPWS=${TPWS:-${ZAPRET_BASE}/tpws/tpws}
+WS_UID=${WS_UID:-1}
+WS_GID=${WS_GID:-3003}
+NFQWS2=${NFQWS2:-${ZAPRET_BASE}/nfq2/nfqws2}
+DVTWS2=${DVTWS2:-${ZAPRET_BASE}/nfq2/dvtws2}
+WINWS2=${WINWS2:-${ZAPRET_BASE}/nfq2/winws2}
 MDIG=${MDIG:-${ZAPRET_BASE}/mdig/mdig}
 DESYNC_MARK=0x10000000
 IPFW_RULE_NUM=${IPFW_RULE_NUM:-1}
@@ -118,10 +119,6 @@ pf_restore()
 			else
 				echo | pfctl -qf -
 			fi
-			;;
-		Darwin)
-			# it's not possible to save all rules in the right order. hard to reorder. if not ordered pf will refuse to load conf.
-			pfctl -qf /etc/pf.conf
 			;;
 	esac
 	if [ "$PF_STATUS" = 1 ]; then
@@ -334,7 +331,6 @@ netcat_setup()
 		fi
 	}
 	return 0
-	
 }
 netcat_test()
 {
@@ -348,34 +344,19 @@ netcat_test()
 	}
 }
 
-tpws_can_fix_seg()
-{
-	# fix-seg requires kernel 4.6+
-	"$TPWS" --port 1 --dry-run --fix-seg >/dev/null 2>/dev/null
-}
-
 check_system()
 {
 	echo \* checking system
 
 	UNAME=$(uname)
 	SUBSYS=
-	FIX_SEG=
 	local s
 
 	# can be passed FWTYPE=iptables to override default nftables preference
 	case "$UNAME" in
 		Linux)
-			PKTWS="$NFQWS"
-			PKTWSD=nfqws
-			if [ -x "$TPWS" ] ; then
-				if tpws_can_fix_seg ; then
-					echo tpws supports --fix-seg on this system
-					FIX_SEG='--fix-seg'
-				else
-					echo tpws does not support --fix-seg on this system
-				fi
-			fi
+			PKTWS="$NFQWS2"
+			PKTWSD=nfqws2
 			linux_fwtype
 			[ "$FWTYPE" = iptables -o "$FWTYPE" = nftables ] || {
 				echo firewall type $FWTYPE not supported in $UNAME
@@ -383,25 +364,20 @@ check_system()
 			}
 			;;
 		FreeBSD)
-			PKTWS="$DVTWS"
-			PKTWSD=dvtws
+			PKTWS="$DVTWS2"
+			PKTWSD=dvtws2
 			FWTYPE=ipfw
 			[ -f /etc/platform ] && read SUBSYS </etc/platform
 			;;
 		OpenBSD)
-			PKTWS="$DVTWS"
-			PKTWSD=dvtws
+			PKTWS="$DVTWS2"
+			PKTWSD=dvtws2
 			FWTYPE=opf
-			;;
-		Darwin)
-			PKTWS="$DVTWS"
-			PKTWSD=dvtws
-			FWTYPE=mpf
 			;;
 		CYGWIN*)
 			UNAME=CYGWIN
-			PKTWS="$WINWS"
-			PKTWSD=winws
+			PKTWS="$WINWS2"
+			PKTWSD=winws2
 			FWTYPE=windivert
 			# ts fooling requires timestamps. they are disabled by default in windows.
 			echo enabling tcp timestamps
@@ -434,10 +410,10 @@ zp_already_running()
 {
 	case "$UNAME" in
 		CYGWIN)
-			win_process_exists $PKTWSD || win_process_exists goodbyedpi
+			win_process_exists $PKTWSD || win_process_exists winws || win_process_exists goodbyedpi
 			;;
 		*)
-			process_exists $PKTWSD || process_exists tpws
+			process_exists $PKTWSD || process_exists tpws || process_exists nfqws
 	esac
 }
 check_already()
@@ -468,22 +444,21 @@ freebsd_modules_loaded()
 check_prerequisites()
 {
 	echo \* checking prerequisites
-	
-	[ "$SKIP_PKTWS" = 1 -o "$UNAME" = Darwin -o -x "$PKTWS" ] && [ "$SKIP_TPWS" = 1 -o "$UNAME" = CYGWIN -o -x "$TPWS" ] && [ -x "$MDIG" ] || {
+
+	[ "$SKIP_PKTWS" = 1 -o -x "$PKTWS" ] &&  [ -x "$MDIG" ] || {
 		local target
 		case $UNAME in
-			Darwin)
-				target="mac"
-				;;
 			OpenBSD)
 				target="bsd"
+				echo $PKTWS or $MDIG is not available. \`gmake -C \"$ZAPRET_BASE\" bsd \`
 				;;
+			*)
+				echo $PKTWS or $MDIG is not available. run \"$ZAPRET_BASE/install_bin.sh\" or \`make -C \"$ZAPRET_BASE\" $target\`
 		esac
-		echo $PKTWS or $TPWS or $MDIG is not available. run \"$ZAPRET_BASE/install_bin.sh\" or \`make -C \"$ZAPRET_BASE\" $target\`
 		exitp 6
 	}
 
-	local prog progs="$CURL"
+	local prog progs='curl'
 	[ "$SKIP_PKTWS" = 1 ] || {
 		case "$UNAME" in
 			Linux)
@@ -528,7 +503,7 @@ check_prerequisites()
 				}
 				progs="$progs ipfw"
 				;;
-			OpenBSD|Darwin)
+			OpenBSD)
 				pf_is_avail || {
 					echo pf is not available
 					exitp 6
@@ -538,12 +513,6 @@ check_prerequisites()
 				;;
 		esac
 	}
-
-	case "$UNAME" in
-		CYGWIN)
-			SKIP_TPWS=1
-			;;
-	esac
 
 	for prog in $progs; do
 		exists $prog || {
@@ -702,7 +671,7 @@ curl_test_http()
 	# $3 - subst ip
 	# $4 - "detail" - detail info
 
-	local code loc hdrt="${HDRTEMP}_${!:-$$}.txt"
+	local code loc hdrt="${HDRTEMP}_${!:-$$}.txt" dom="$(tolower "$2")"
 	curl_probe $1 $2 $HTTP_PORT "$3" -SsD "$hdrt" -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT "http://$2" -o /dev/null 2>&1 || {
 		code=$?
 		rm -f "$hdrt"
@@ -715,8 +684,8 @@ curl_test_http()
 		code=$(hdrfile_http_code "$hdrt")
 		[ "$code" = 301 -o "$code" = 302 -o "$code" = 307 -o "$code" = 308 ] && {
 			loc=$(hdrfile_location "$hdrt")
-			echo "$loc" | grep -qE "^https?://.*$2(/|$)" ||
-			echo "$loc" | grep -vqE '^https?://' || {
+			tolower "$loc" | grep -qE "^https?://.*$dom(/|$)" ||
+			tolower "$loc" | grep -vqE '^https?://' || {
 				echo suspicious redirection $code to : $loc
 				rm -f "$hdrt"
 				return 254
@@ -863,7 +832,7 @@ pktws_ipt_prepare()
 			opf_prepare_dvtws $1 $2 "$3"
 			;;
 		windivert)
-			WF="--wf-l3=ipv${IPV} --wf-${1}=$2"
+			WF="--wf-l3=ipv${IPV} --wf-${1}-out=$2"
 			rm -f "$IPSET_FILE"
 			for ip in $3; do
 				echo $ip >>"$IPSET_FILE"
@@ -939,7 +908,7 @@ pktws_ipt_prepare_tcp()
 pktws_ipt_unprepare_tcp()
 {
 	# $1 - port
-	
+
 	pktws_ipt_unprepare tcp $1
 
 	case "$FWTYPE" in
@@ -960,7 +929,7 @@ pktws_ipt_prepare_udp()
 pktws_ipt_unprepare_udp()
 {
 	# $1 - port
-	
+
 	pktws_ipt_unprepare udp $1
 }
 
@@ -968,24 +937,15 @@ pktws_start()
 {
 	case "$UNAME" in
 		Linux)
-			"$NFQWS" --uid $TPWS_UID:$TPWS_GID --dpi-desync-fwmark=$DESYNC_MARK --qnum=$QNUM "$@" >/dev/null &
+			"$NFQWS2" --uid $WS_UID:$WS_GID --fwmark=$DESYNC_MARK --qnum=$QNUM --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
 			;;
 		FreeBSD|OpenBSD)
-			"$DVTWS" --port=$IPFW_DIVERT_PORT "$@" >/dev/null &
+			"$DVTWS2" --port=$IPFW_DIVERT_PORT --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
 			;;
 		CYGWIN)
-			"$WINWS" $WF --ipset="$IPSET_FILE" "$@" >/dev/null &
+			"$WINWS2" $WF --ipset="$IPSET_FILE" --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
 			;;
 	esac
-	PID=$!
-	# give some time to initialize
-	minsleep
-}
-tpws_start()
-{
-	local uid
-	[ -n "$HAVE_ROOT" ] && uid="--uid $TPWS_UID:$TPWS_GID"
-	"$TPWS" $uid --socks --bind-addr=127.0.0.1 --port=$SOCKS_PORT "$@" >/dev/null &
 	PID=$!
 	# give some time to initialize
 	minsleep
@@ -1074,7 +1034,6 @@ curl_test()
 }
 ws_curl_test()
 {
-
 	# $1 - ws start function
 	# $2 - test function
 	# $3 - domain
@@ -1100,23 +1059,6 @@ ws_curl_test()
 	ws_kill
 	return $code
 }
-tpws_curl_test()
-{
-	# $1 - test function
-	# $2 - domain
-	# $3,$4,$5, ... - tpws params
-	echo - $1 ipv$IPV $2 : tpws $3 $4 $5 $6 $7 $8 $9${TPWS_EXTRA:+ $TPWS_EXTRA}${TPWS_EXTRA_1:+ "$TPWS_EXTRA_1"}${TPWS_EXTRA_2:+ "$TPWS_EXTRA_2"}${TPWS_EXTRA_3:+ "$TPWS_EXTRA_3"}${TPWS_EXTRA_4:+ "$TPWS_EXTRA_4"}${TPWS_EXTRA_5:+ "$TPWS_EXTRA_5"}${TPWS_EXTRA_6:+ "$TPWS_EXTRA_6"}${TPWS_EXTRA_7:+ "$TPWS_EXTRA_7"}${TPWS_EXTRA_8:+ "$TPWS_EXTRA_8"}${TPWS_EXTRA_9:+ "$TPWS_EXTRA_9"}
-	local ALL_PROXY="socks5://127.0.0.1:$SOCKS_PORT"
-	ws_curl_test tpws_start "$@"${TPWS_EXTRA:+ $TPWS_EXTRA}${TPWS_EXTRA_1:+ "$TPWS_EXTRA_1"}${TPWS_EXTRA_2:+ "$TPWS_EXTRA_2"}${TPWS_EXTRA_3:+ "$TPWS_EXTRA_3"}${TPWS_EXTRA_4:+ "$TPWS_EXTRA_4"}${TPWS_EXTRA_5:+ "$TPWS_EXTRA_5"}${TPWS_EXTRA_6:+ "$TPWS_EXTRA_6"}${TPWS_EXTRA_7:+ "$TPWS_EXTRA_7"}${TPWS_EXTRA_8:+ "$TPWS_EXTRA_8"}${TPWS_EXTRA_9:+ "$TPWS_EXTRA_9"}
-	local testf=$1 dom=$2 strategy code=$?
-	[ "$code" = 0 ] && {
-		shift; shift;
-		strategy="$@"
-		strategy_append_extra_tpws
-		report_append "$dom" "$testf ipv${IPV}" "tpws ${WF:+$WF }$strategy"
-	}
-	return $code
-}
 pktws_curl_test()
 {
 	# $1 - test function
@@ -1125,8 +1067,8 @@ pktws_curl_test()
 	local testf=$1 dom=$2 strategy code
 
 	shift; shift;
-	echo - $testf ipv$IPV $dom : $PKTWSD ${WF:+$WF }${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$@${PKTWS_EXTRA:+ $PKTWS_EXTRA}${PKTWS_EXTRA_1:+ "$PKTWS_EXTRA_1"}${PKTWS_EXTRA_2:+ "$PKTWS_EXTRA_2"}${PKTWS_EXTRA_3:+ "$PKTWS_EXTRA_3"}${PKTWS_EXTRA_4:+ "$PKTWS_EXTRA_4"}${PKTWS_EXTRA_5:+ "$PKTWS_EXTRA_5"}${PKTWS_EXTRA_6:+ "$PKTWS_EXTRA_6"}${PKTWS_EXTRA_7:+ "$PKTWS_EXTRA_7"}${PKTWS_EXTRA_8:+ "$PKTWS_EXTRA_8"}${PKTWS_EXTRA_9:+ "$PKTWS_EXTRA_9"}
-	ws_curl_test pktws_start $testf $dom ${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }"$@"${PKTWS_EXTRA:+ $PKTWS_EXTRA}${PKTWS_EXTRA_1:+ "$PKTWS_EXTRA_1"}${PKTWS_EXTRA_2:+ "$PKTWS_EXTRA_2"}${PKTWS_EXTRA_3:+ "$PKTWS_EXTRA_3"}${PKTWS_EXTRA_4:+ "$PKTWS_EXTRA_4"}${PKTWS_EXTRA_5:+ "$PKTWS_EXTRA_5"}${PKTWS_EXTRA_6:+ "$PKTWS_EXTRA_6"}${PKTWS_EXTRA_7:+ "$PKTWS_EXTRA_7"}${PKTWS_EXTRA_8:+ "$PKTWS_EXTRA_8"}${PKTWS_EXTRA_9:+ "$PKTWS_EXTRA_9"}
+	echo - $testf ipv$IPV $dom : $PKTWSD ${WF:+$WF }${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$@${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_POST_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}
+	ws_curl_test pktws_start $testf $dom ${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }"$@"${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_POST_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}
 
 	code=$?
 	[ "$code" = 0 ] && {
@@ -1136,22 +1078,18 @@ pktws_curl_test()
 	}
 	return $code
 }
-
 strategy_append_extra_pktws()
 {
-	strategy="${strategy:+${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$strategy${PKTWS_EXTRA:+ $PKTWS_EXTRA}${PKTWS_EXTRA_1:+ "$PKTWS_EXTRA_1"}${PKTWS_EXTRA_2:+ "$PKTWS_EXTRA_2"}${PKTWS_EXTRA_3:+ "$PKTWS_EXTRA_3"}${PKTWS_EXTRA_4:+ "$PKTWS_EXTRA_4"}${PKTWS_EXTRA_5:+ "$PKTWS_EXTRA_5"}${PKTWS_EXTRA_6:+ "$PKTWS_EXTRA_6"}${PKTWS_EXTRA_7:+ "$PKTWS_EXTRA_7"}${PKTWS_EXTRA_8:+ "$PKTWS_EXTRA_8"}${PKTWS_EXTRA_9:+ "$PKTWS_EXTRA_9"}}"
+	strategy="${strategy:+${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$strategy${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}}"
 }
-strategy_append_extra_tpws()
-{
-	strategy="${strategy:+${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$strategy${TPWS_EXTRA:+ $TPWS_EXTRA}${TPWS_EXTRA_1:+ "$TPWS_EXTRA_1"}${TPWS_EXTRA_2:+ "$TPWS_EXTRA_2"}${TPWS_EXTRA_3:+ "$TPWS_EXTRA_3"}${TPWS_EXTRA_4:+ "$TPWS_EXTRA_4"}${TPWS_EXTRA_5:+ "$TPWS_EXTRA_5"}${TPWS_EXTRA_6:+ "$TPWS_EXTRA_6"}${TPWS_EXTRA_7:+ "$TPWS_EXTRA_7"}${TPWS_EXTRA_8:+ "$TPWS_EXTRA_8"}${TPWS_EXTRA_9:+ "$TPWS_EXTRA_9"}}"
-}
+
 
 xxxws_curl_test_update()
 {
 	# $1 - xxx_curl_test function
 	# $2 - test function
 	# $3 - domain
-	# $4,$5,$6, ... - nfqws/dvtws params
+	# $4,$5,$6, ... - nfqws2/dvtws2 params
 	local code xxxf=$1 testf=$2 dom=$3
 	shift
 	shift
@@ -1164,10 +1102,6 @@ xxxws_curl_test_update()
 pktws_curl_test_update()
 {
 	xxxws_curl_test_update pktws_curl_test "$@"
-}
-tpws_curl_test_update()
-{
-	xxxws_curl_test_update tpws_curl_test "$@"
 }
 
 report_append()
@@ -1248,450 +1182,65 @@ report_strategy()
 		return 1
 	fi
 }
-test_has_fakedsplit()
-{
-	contains "$1" fakedsplit || contains "$1" fakeddisorder
-}
-test_has_split()
-{
-	contains "$1" multisplit || contains "$1" multidisorder || test_has_fakedsplit "$1"
-}
-test_has_hostfakesplit()
-{
-	contains "$1" hostfakesplit
-}
-test_has_fake()
-{
-	[ "$1" = fake ] || starts_with "$1" fake,
-}
-warn_fool()
-{
-	case "$1" in
-		md5sig) echo 'WARNING ! although md5sig fooling worked it will not work on all sites. it typically works only on linux servers.'
-			[ "$2" = "fakedsplit" -o "$2" = "fakeddisorder" ] && \
-				echo "WARNING ! fakedsplit/fakeddisorder with md5sig fooling and low split position causes MTU overflow with multi-segment TLS (kyber)"
-			;;
-		datanoack) echo 'WARNING ! although datanoack fooling worked it may break NAT and may only work with external IP. Additionally it may require nftables to work correctly.' ;;
-		ts) echo 'WARNING ! although ts fooling worked it will not work without timestamps being enabled in the client OS. In windows timestamps are DISABLED by default.'
-	esac
-}
-pktws_curl_test_update_vary()
-{
-	# $1 - test function
-	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
-	# $3 - domain
-	# $4 - desync mode
-	# $5,$6,... - strategy
 
-	local testf=$1 sec=$2 domain=$3 desync=$4 proto splits= pos fake ret=1
-	local fake1=- fake2=- fake3=- fake4=-
-	
-	shift; shift; shift; shift
-	
-	proto=http
-	[ "$sec" = 0 ] || proto=tls
-	test_has_fake $desync && {
-		fake1="--dpi-desync-fake-$proto=0x00000000"
-		[ "$sec" = 0 ] || {
-			fake2='--dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls=! --dpi-desync-fake-tls-mod=rnd,rndsni,dupsid'
-			# this splits actual fake to '1603' and modified standard fake from offset 2
-			fake3='--dpi-desync-fake-tls=0x1603 --dpi-desync-fake-tls=!+2 --dpi-desync-fake-tls-mod=rnd,dupsid,rndsni --dpi-desync-fake-tcp-mod=seq'
-			fake4='--dpi-desync-fake-tls-mod=rnd,dupsid,rndsni,padencap'
+test_runner()
+{
+	# $1 - function name
+	# $2+ - params
+
+	local n script FUNC=$1
+
+	shift
+
+	TESTDIR="$BLOCKCHECK2D/$TEST"
+	[ -d "$TESTDIR" ] && {
+		dir_is_not_empty "$TESTDIR" && {
+			for script in "$TESTDIR/"*.sh; do
+				[ -f "$script" ] || continue
+				unset -f $FUNC
+				. "$script"
+				existf $FUNC && {
+					echo
+					echo "* script : $TEST/$(basename "$script")"
+					$FUNC "$@"
+				}
+			done
 		}
 	}
-	if test_has_fakedsplit $desync ; then
-		splits="method+2 midsld"
-		[ "$sec" = 0 ] || splits="1 midsld"
-		# do not send fake first
-		fake1='--dpi-desync-fakedsplit-mod=altorder=1'
-	elif test_has_split $desync ; then
-		splits="method+2 midsld"
-		[ "$sec" = 0 ] || splits="1 midsld 1,midsld"
-	fi
-	test_has_hostfakesplit $desync && {
-		fake1="--dpi-desync-hostfakesplit-mod=altorder=1"
-		fake2="--dpi-desync-hostfakesplit-midhost=midsld"
-		fake3="--dpi-desync-hostfakesplit-mod=altorder=1 --dpi-desync-hostfakesplit-midhost=midsld"
-	}
-	for fake in '' "$fake1" "$fake2" "$fake3" "$fake4" ; do
-		[ "$fake" = "-" ] && continue
-		if [ -n "$splits" ]; then
-			for pos in $splits ; do
-				pktws_curl_test_update $testf $domain --dpi-desync=$desync "$@" --dpi-desync-split-pos=$pos $fake && {
-					[ "$SCANLEVEL" = force ] || return 0
-					ret=0
-				}
-			done
-		else
-			pktws_curl_test_update $testf $domain --dpi-desync=$desync "$@" $fake && {
-				[ "$SCANLEVEL" = force ] || return 0
-				ret=0
-			}
-		fi
-	done
-
-	return $ret
 }
 
-pktws_check_domain_http_bypass_()
-{
-	# $1 - test function
-	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
-	# $3 - domain
-
-	local ok ttls attls s f f2 e desync pos fooling frag sec="$2" delta orig splits
-	local need_split need_disorder need_fakedsplit need_hostfakesplit need_fakeddisorder need_fake need_wssize
-	local splits_http='method+2 midsld method+2,midsld'
-	local splits_tls='2 1 sniext+1 sniext+4 host+1 midsld 1,midsld 1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1'
-
-	[ "$sec" = 0 ] && {
-		for s in '--hostcase' '--hostspell=hoSt' '--hostnospace' '--domcase' '--methodeol'; do
-			pktws_curl_test_update $1 $3 $s && [ "$SCANLEVEL" = quick ] && return
-		done
-	}
-
-	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
-	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
-	need_wssize=1
-	for e in '' '--wssize 1:6'; do
-		need_split=
-		need_disorder=
-
-		[ -n "$e" ] && {
-			pktws_curl_test_update $1 $3 $e && [ "$SCANLEVEL" = quick ] && return
-		}
-
-		for desync in multisplit multidisorder; do
-			ok=0
-			splits="$splits_http"
-			[ "$sec" = 0 ] || splits="$splits_tls"
-			for pos in $splits; do
-				pktws_curl_test_update $1 $3 --dpi-desync=$desync --dpi-desync-split-pos=$pos $e && {
-					[ "$SCANLEVEL" = quick ] && return
-					ok=1
-					need_wssize=0
-					[ "$SCANLEVEL" = force ] || break
-				}
-			done
-			[ "$ok" = 1 -a "$SCANLEVEL" != force ] || {
-				case $desync in
-					multisplit)
-						need_split=1
-						;;
-					multidisorder)
-						need_disorder=1
-						;;
-				esac
-			}
-		done
-
-		need_fakedsplit=1
-		need_hostfakesplit=1
-		need_fakeddisorder=1
-		need_fake=1
-		for desync in fake ${need_split:+fakedsplit fake,multisplit fake,fakedsplit hostfakesplit fake,hostfakesplit} ${need_disorder:+fakeddisorder fake,multidisorder fake,fakeddisorder}; do
-			[ "$need_fake" = 0 ] && test_has_fake "$desync" && continue
-			[ "$need_fakedsplit" = 0 ] && contains "$desync" fakedsplit && continue
-			[ "$need_hostfakesplit" = 0 ] && contains "$desync" hostfakesplit && continue
-			[ "$need_fakeddisorder" = 0 ] && contains "$desync" fakeddisorder && continue
-			ok=0
-			for ttl in $ttls; do
-				# orig-ttl=1 with start/cutoff limiter drops empty ACK packet in response to SYN,ACK. it does not reach DPI or server.
-				# missing ACK is transmitted in the first data packet of TLS/HTTP proto
-				for f in '' '--orig-ttl=1 --orig-mod-start=s1 --orig-mod-cutoff=d1'; do
-					pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-ttl=$ttl $f $e && {
-						[ "$SCANLEVEL" = quick ] && return
-						ok=1
-						need_wssize=0
-						[ "$SCANLEVEL" = force ] || break
-					}
-				done
-				[ "$ok" = 1 ] && break
-			done
-			# only skip tests if TTL succeeded. do not skip if TTL failed but fooling succeeded
-			[ $ok = 1 -a "$SCANLEVEL" != force ] && {
-				[ "$desync" = fake ] && need_fake=0
-				[ "$desync" = fakedsplit ] && need_fakedsplit=0
-				[ "$desync" = hostfakesplit ] && need_hostfakesplit=0
-				[ "$desync" = fakeddisorder ] && need_fakeddisorder=0
-			}
-			f=
-			[ "$UNAME" = "OpenBSD" ] || f="badsum"
-			f="$f badseq datanoack ts md5sig"
-			[ "$IPV" = 6 ] && f="$f hopbyhop hopbyhop2"
-			for fooling in $f; do
-				ok=0
-				f2=
-				pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-fooling=$fooling $e && {
-					warn_fool $fooling $desync
-					[ "$SCANLEVEL" = quick ] && return
-					need_wssize=0
-					ok=1
-				}
-				[ "$fooling" = badseq ] && {
-					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && continue
-					# --dpi-desync-badseq-increment=0 leaves modified by default ack increment
-					pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-fooling=$fooling --dpi-desync-badseq-increment=0 $e && {
-						[ "$SCANLEVEL" = quick ] && return
-						need_wssize=0
-					}
-				}
-				[ "$fooling" = md5sig ] && {
-					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && continue
-					pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-fooling=$fooling --dup=1 --dup-cutoff=n2 --dup-fooling=md5sig $e && {
-						warn_fool $fooling $desync
-						echo "HINT ! To avoid possible 1 sec server response delay use --dup-ttl or --dup-autottl and block ICMP time exceeded"
-						[ "$SCANLEVEL" = quick ] && return
-						need_wssize=0
-					}
-				}
-			done
-		done
-
-		[ "$IPV" = 6 ] && {
-			f="hopbyhop ${need_split:+hopbyhop,multisplit} ${need_disorder:+hopbyhop,multidisorder} destopt ${need_split:+destopt,multisplit} ${need_disorder:+destopt,multidisorder}"
-			[ -n "$IP6_DEFRAG_DISABLE" ] && f="$f ipfrag1 ${need_split:+ ipfrag1,multisplit} ${need_disorder:+ ipfrag1,multidisorder}"
-			for desync in $f; do
-				pktws_curl_test_update_vary $1 $2 $3 $desync $e && {
-					[ "$SCANLEVEL" = quick ] && return
-					need_wssize=0
-				}
-			done
-		}
-
-		[ "$need_split" = 1 ] && {
-			# relative markers can be anywhere, even in subsequent packets. first packet can be MTU-full.
-			# make additional split pos "10" to guarantee enough space for seqovl and likely to be before midsld,sniext,...
-			# method is always expected in the beginning of the first packet
-			f="method+2 method+2,midsld"
-			[ "$sec" = 0 ] || f="10 10,sniext+1 10,sniext+4 10,midsld"
-			for pos in $f; do
-				pktws_curl_test_update $1 $3 --dpi-desync=multisplit --dpi-desync-split-pos=$pos --dpi-desync-split-seqovl=1 $e && {
-					[ "$SCANLEVEL" = quick ] && return
-					need_wssize=0
-				}
-			done
-			[ "$sec" != 0 ] && pktws_curl_test_update $1 $3 --dpi-desync=multisplit --dpi-desync-split-pos=2 --dpi-desync-split-seqovl=336 --dpi-desync-split-seqovl-pattern="$ZAPRET_BASE/files/fake/tls_clienthello_iana_org.bin" $e && {
-				[ "$SCANLEVEL" = quick ] && return
-				need_wssize=0
-			}
-		}
-		[ "$need_disorder" = 1 ] && {
-			if [ "$sec" = 0 ]; then
-				for pos in 'method+1 method+2' 'midsld-1 midsld' 'method+1 method+2,midsld'; do
-					f="$(extract_arg 1 $pos)"
-					f2="$(extract_arg 2 $pos)"
-					pktws_curl_test_update $1 $3 --dpi-desync=multidisorder --dpi-desync-split-pos=$f2 --dpi-desync-split-seqovl=$f $e && {
-						[ "$SCANLEVEL" = quick ] && return
-						need_wssize=0
-					}
-				done
-			else
-				for pos in '1 2' 'sniext sniext+1' 'sniext+3 sniext+4' 'midsld-1 midsld' '1 2,midsld'; do
-					f=$(extract_arg 1 $pos)
-					f2=$(extract_arg 2 $pos)
-					pktws_curl_test_update $1 $3 --dpi-desync=multidisorder --dpi-desync-split-pos=$f2 --dpi-desync-split-seqovl=$f $e && {
-						[ "$SCANLEVEL" = quick ] && return
-						need_wssize=0
-					}
-				done
-			fi
-		}
-
-		need_fakedsplit=1
-		need_fakeddisorder=1
-		need_hostfakesplit=1
-		need_fake=1
-		for desync in fake ${need_split:+fakedsplit fake,multisplit fake,fakedsplit hostfakesplit fake,hostfakesplit} ${need_disorder:+fakeddisorder fake,multidisorder fake,fakeddisorder}; do
-			[ "$need_fake" = 0 ] && test_has_fake "$desync" && continue
-			[ "$need_fakedsplit" = 0 ] && contains "$desync" fakedsplit && continue
-			[ "$need_hostfakesplit" = 0 ] && contains "$desync" hostfakesplit && continue
-			[ "$need_fakeddisorder" = 0 ] && contains "$desync" fakeddisorder && continue
-			ok=0
-			# orig-ttl=1 with start/cutoff limiter drops empty ACK packet in response to SYN,ACK. it does not reach DPI or server.
-			# missing ACK is transmitted in the first data packet of TLS/HTTP proto
-			for delta in $attls; do
-				for f in '' '--orig-ttl=1 --orig-mod-start=s1 --orig-mod-cutoff=d1'; do
-					pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-ttl=1 --dpi-desync-autottl=-$delta $f $e && ok=1
-					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && break
-				done
-			done
-			[ "$SCANLEVEL" = force ] && {
-				for orig in 1 2 3; do
-					for delta in $attls; do
-						pktws_curl_test_update_vary $1 $2 $3 $desync ${orig:+--orig-autottl=+$orig} --dpi-desync-ttl=1 --dpi-desync-autottl=-$delta $e && ok=1
-					done
-					[ "$ok" = 1 -a "$SCANLEVEL" != force ] && break
-				done
-			}
-			[ "$ok" = 1 ] &&
-			{
-				echo "WARNING ! although autottl worked it requires testing on multiple domains to find out reliable delta"
-				echo "WARNING ! if a reliable delta cannot be found it's a good idea not to use autottl"
-				[ "$SCANLEVEL" = quick ] && return
-				need_wssize=0
-				[ "$SCANLEVEL" = force ] || {
-					[ "$desync" = fake ] && need_fake=0
-					[ "$desync" = fakedsplit ] && need_fakedsplit=0
-					[ "$desync" = hostfakesplit ] && need_hostfakesplit=0
-					[ "$desync" = fakeddisorder ] && need_fakeddisorder=0
-				}
-			}			
-		done
-
-		s="http_iana_org.bin"
-		[ "$sec" = 0 ] || s="tls_clienthello_iana_org.bin"
-		for desync in syndata ${need_split:+syndata,multisplit} ${need_disorder:+syndata,multidisorder} ; do
-			pktws_curl_test_update_vary $1 $2 $3 $desync $e && [ "$SCANLEVEL" = quick ] && return
-			pktws_curl_test_update_vary $1 $2 $3 $desync --dpi-desync-fake-syndata="$ZAPRET_BASE/files/fake/$s" $e && [ "$SCANLEVEL" = quick ] && return
-		done
-
-		# do not do wssize test for http and TLS 1.3. it's useless
-		[ "$sec" = 1 ] || break
-		[ "$SCANLEVEL" = force -o "$need_wssize" = 1 ] || break
-	done
-}
 pktws_check_domain_http_bypass()
 {
 	# $1 - test function
 	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
 	# $3 - domain
 
-	local strategy
-	pktws_check_domain_http_bypass_ "$@"
+	local strategy func
+	if [ "$2" = 0 ]; then
+		func=pktws_check_http
+	elif [ "$2" = 1 ]; then
+		func=pktws_check_https_tls12
+	elif [ "$2" = 2 ]; then
+		func=pktws_check_https_tls13
+	else
+		return 1
+	fi
+	test_runner $func "$1" "$3"
 	strategy_append_extra_pktws
 	report_strategy $1 $3 $PKTWSD
 }
 
-pktws_check_domain_http3_bypass_()
-{
-	# $1 - test function
-	# $2 - domain
-
-	local f desync frag tests rep fake
-
-	for fake in '' "--dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin"; do
-		for rep in '' 2 5 10 20; do
-			pktws_curl_test_update $1 $2 --dpi-desync=fake ${fake:+$fake }${rep:+--dpi-desync-repeats=$rep} && [ "$SCANLEVEL" != force ] && {
-				[ "$SCANLEVEL" = quick ] && return
-				break
-			}
-		done
-	done
-
-	[ "$IPV" = 6 ] && {
-		f="hopbyhop destopt"
-		[ -n "$IP6_DEFRAG_DISABLE" ] && f="$f ipfrag1"
-		for desync in $f; do
-			pktws_curl_test_update $1 $2 --dpi-desync=$desync && [ "$SCANLEVEL" = quick ] && return
-		done
-	}
-
-	# OpenBSD has checksum issues with fragmented packets
-	[ "$UNAME" != "OpenBSD" ] && [ "$IPV" = 4 -o -n "$IP6_DEFRAG_DISABLE" ] && {
-		for frag in 8 16 24 32 40 64; do
-			tests="ipfrag2"
-			[ "$IPV" = 6 ] && tests="$tests hopbyhop,ipfrag2 destopt,ipfrag2"
-			for desync in $tests; do
-				pktws_curl_test_update $1 $2 --dpi-desync=$desync --dpi-desync-ipfrag-pos-udp=$frag && [ "$SCANLEVEL" = quick ] && return
-			done
-		done
-	}
-	
-}
 pktws_check_domain_http3_bypass()
 {
 	# $1 - test function
 	# $2 - domain
 
 	local strategy
-	pktws_check_domain_http3_bypass_ "$@"
+	test_runner pktws_check_http3 "$@"
 	strategy_append_extra_pktws
 	report_strategy $1 $2 $PKTWSD
 }
-warn_mss()
-{
-	[ -n "$1" ] && echo 'WARNING ! although mss worked it may not work on all sites and will likely cause significant slowdown. it may only be required for TLS1.2, not TLS1.3'
-	return 0
-}
-fix_seg()
-{
-	# $1 - split-pos
-	[ -n "$FIX_SEG" ] && contains "$1" , && echo "$FIX_SEG"
-}
 
-tpws_check_domain_http_bypass_()
-{
-	# $1 - test function
-	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
-	# $3 - domain
-
-	local s mss s2 s3 oobdis pos sec="$2"
-	local splits_tls='2 1 sniext+1 sniext+4 host+1 midsld 1,midsld 1,sniext+1,host+1,midsld,endhost-1'
-	local splits_http='method+2 midsld method+2,midsld'
-
-	# simulteneous oob and disorder works properly only in linux. other systems retransmit oob byte without URG tcp flag and poison tcp stream.
-	[ "$UNAME" = Linux ] && oobdis='--oob --disorder'
-	if [ "$sec" = 0 ]; then
-		for s in '--hostcase' '--hostspell=hoSt' '--hostdot' '--hosttab' '--hostnospace' '--domcase' ; do
-			tpws_curl_test_update $1 $3 $s && [ "$SCANLEVEL" = quick ] && return
-		done
-		for s in 1024 2048 4096 8192 16384 ; do
-			tpws_curl_test_update $1 $3 --hostpad=$s && [ "$SCANLEVEL" != force ] && {
-				[ "$SCANLEVEL" = quick ] && return
-				break
-			}
-		done
-		for s2 in '' '--hostcase' '--oob' '--disorder' ${oobdis:+"$oobdis"}; do
-			for s in $splits_http ; do
-				tpws_curl_test_update $1 $3 --split-pos=$s $(fix_seg $s) $s2 && [ "$SCANLEVEL" != force ] && {
-					[ "$SCANLEVEL" = quick ] && return
-					break
-				}
-			done
-		done
-		for s in  '--methodspace' '--unixeol' '--methodeol'; do
-			tpws_curl_test_update $1 $3 $s && [ "$SCANLEVEL" = quick ] && return
-		done
-	else
-		local need_mss=1
-		for mss in '' 88; do
-			s3=${mss:+--mss=$mss}
-			for s2 in '' '--oob' '--disorder' ${oobdis:+"$oobdis"}; do
-				for pos in $splits_tls; do
-					tpws_curl_test_update $1 $3 --split-pos=$pos $(fix_seg $pos) $s2 $s3 && warn_mss $s3 && [ "$SCANLEVEL" != force ] && {
-						[ "$SCANLEVEL" = quick ] && return
-						need_mss=0
-						break
-					}
-				done
-			done
-			for s in '' '--oob' '--disorder' ${oobdis:+"$oobdis"}; do
-				for s2 in '--tlsrec=midsld' '--tlsrec=sniext+1 --split-pos=midsld' '--tlsrec=sniext+4 --split-pos=midsld' "--tlsrec=sniext+1 --split-pos=1,midsld $FIX_SEG" "--tlsrec=sniext+4 --split-pos=1,midsld $FIX_SEG" ; do
-					tpws_curl_test_update $1 $3 $s2 $s $s3 && warn_mss $s3 && [ "$SCANLEVEL" != force ] && {
-						[ "$SCANLEVEL" = quick ] && return
-						need_mss=0
-						break
-					}
-				done
-			done
-			# only linux supports mss
-			[ "$UNAME" = Linux -a "$sec" = 1 ] || break
-			[ "$SCANLEVEL" = force -o "$need_mss" = 1 ] || break
-		done
-	fi
-}
-tpws_check_domain_http_bypass()
-{
-	# $1 - test function
-	# $2 - encrypted test : 0 = plain, 1 - encrypted with server reply risk, 2 - encrypted without server reply risk
-	# $3 - domain
-
-	local strategy
-	tpws_check_domain_http_bypass_ "$@"
-	strategy_append_extra_tpws
-	report_strategy $1 $3 tpws
-}
 
 check_dpi_ip_block()
 {
@@ -1921,14 +1470,44 @@ configure_defrag()
 
 ask_params()
 {
+	local d dirs more_dirs=
+
 	echo
 	echo NOTE ! this test should be run with zapret or any other bypass software disabled, without VPN
 	echo
-	
+
 	curl_supports_connect_to || {
 		echo "installed curl does not support --connect-to option. pls install at least curl 7.49"
 		echo "current curl version:"
 		"$CURL" --version
+		exitp 1
+	}
+
+	[ -n "$TEST" ] || {
+		dir_is_not_empty "$BLOCKCHECK2D" || {
+			echo "directory '$BLOCKCHECK2D' is absent or empty"
+			exitp 1
+		}
+		TEST="$TEST_DEFAULT"
+		[ "$BATCH" = 1 ] || {
+			for d in "$BLOCKCHECK2D"/* ; do
+				more_dirs=${dirs:+1}
+				[ -d "$d" ] && dirs="${dirs:+$dirs }$(basename "$d")"
+			done
+			[ -n "$dirs" ] || {
+				echo "no subdirs found in '$BLOCKCHECK2D'"
+				exitp 1
+			}
+			if [ -z "$more_dirs" ]; then
+				TEST="$dirs"
+			else
+				echo "select test :"
+				ask_list TEST "$dirs" "$TEST"
+			fi
+		}
+	}
+	[ -d "$BLOCKCHECK2D/$TEST" ] || {
+		echo "directory '$BLOCKCHECK2D/$TEST' does not exist"
 		exitp 1
 	}
 
@@ -2038,12 +1617,10 @@ ask_params()
 		SCANLEVEL=standard
 		[ "$BATCH" = 1 ] || {
 			echo
-			echo quick    - scan as fast as possible to reveal any working strategy
+			echo quick    - in multi-attempt mode skip further attempts after first failure
 			echo standard - do investigation what works on your DPI
 			echo force    - scan maximum despite of result
 			ask_list SCANLEVEL "quick standard force" "$SCANLEVEL"
-			# disable tpws checks by default in quick mode
-			[ "$SCANLEVEL" = quick -a -z "$SKIP_TPWS" -a "$UNAME" != Darwin ] && SKIP_TPWS=1
 		}
 	}
 
@@ -2073,7 +1650,6 @@ pingtest()
 	# $2 - domain or ip
 
 	# ping command can vary a lot. some implementations have -4/-6 options. others don.t
-	# WARNING ! macos ping6 command does not have timeout option. ping6 will fail
 
 	local PING=ping ret
 	if [ "$1" = 6 ]; then
@@ -2083,7 +1659,7 @@ pingtest()
 			PING="ping -6"
 		fi
 	else
-		if [ "$UNAME" = Darwin -o "$UNAME" = FreeBSD -o "$UNAME" = OpenBSD ]; then
+		if [ "$UNAME" = FreeBSD -o "$UNAME" = OpenBSD ]; then
 			# ping by default pings ipv4, ping6 only pings ipv6
 			# in FreeBSD -4/-6 options are supported, in others not
 			PING=ping
@@ -2094,10 +1670,6 @@ pingtest()
 		fi
 	fi
 	case "$UNAME" in
-		Darwin)
-			$PING -c 1 -t 1 $2 >/dev/null 2>/dev/null
-			# WARNING ! macos ping6 command does not have timeout option. ping6 will fail. but without timeout is not an option.
-			;;
 		OpenBSD)
 			$PING -c 1 -w 1 $2 >/dev/null
 			;;
@@ -2283,8 +1855,6 @@ fsleep_setup
 fix_sbin_path
 check_system
 check_already
-# no divert sockets in MacOS
-[ "$UNAME" = "Darwin" ] && SKIP_PKTWS=1
 [ "$UNAME" != CYGWIN  -a "$SKIP_PKTWS" != 1 ] && require_root
 check_prerequisites
 trap sigint_cleanup INT

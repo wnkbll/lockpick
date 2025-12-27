@@ -109,6 +109,10 @@ split_by_separator()
 	[ -n "$3" ] && eval $3="\$before"
 	[ -n "$4" ] && eval $4="\$after"
 }
+tolower()
+{
+	echo "$@" | tr 'A-Z' 'a-z'
+}
 
 dir_is_not_empty()
 {
@@ -416,16 +420,15 @@ alloc_num()
 
 std_ports()
 {
-	TPWS_PORTS_IPT=$(replace_char - : $TPWS_PORTS)
-	NFQWS_PORTS_TCP_IPT=$(replace_char - : $NFQWS_PORTS_TCP)
-	NFQWS_PORTS_TCP_KEEPALIVE_IPT=$(replace_char - : $NFQWS_PORTS_TCP_KEEPALIVE)
-	NFQWS_PORTS_UDP_IPT=$(replace_char - : $NFQWS_PORTS_UDP)
-	NFQWS_PORTS_UDP_KEEPALIVE_IPT=$(replace_char - : $NFQWS_PORTS_UDP_KEEPALIVE)
+	NFQWS2_PORTS_TCP_IPT=$(replace_char - : $NFQWS2_PORTS_TCP)
+	NFQWS2_PORTS_TCP_KEEPALIVE_IPT=$(replace_char - : $NFQWS2_PORTS_TCP_KEEPALIVE)
+	NFQWS2_PORTS_UDP_IPT=$(replace_char - : $NFQWS2_PORTS_UDP)
+	NFQWS2_PORTS_UDP_KEEPALIVE_IPT=$(replace_char - : $NFQWS2_PORTS_UDP_KEEPALIVE)
 }
 
 has_bad_ws_options()
 {
-	# $1 - nfqws/tpws opts
+	# $1 - nfqws2 opts
 
 	contains "$1" "--ipset" && {
 		echo
@@ -441,7 +444,7 @@ has_bad_ws_options()
 check_bad_ws_options()
 {
 	# $1 - 0 = stop, 1 = start
-	# $2 - nfqws/tpws options
+	# $2 - nfqws options
 	if [ "$1" = 1 ] && has_bad_ws_options "$2"; then
 		echo "!!! REFUSING TO USE BAD OPTIONS : $2"
 		help_bad_ws_options
