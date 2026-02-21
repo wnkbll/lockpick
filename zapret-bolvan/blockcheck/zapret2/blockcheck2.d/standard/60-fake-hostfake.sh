@@ -20,7 +20,7 @@ pktws_hostfake_vary()
 	pktws_hostfake_vary_ "$1" "$2" "$3" "$4" "$5"
 	# duplicate SYN with MD5
 	contains "$fooling" tcp_md5 && \
-		pktws_hostfake_vary_  "$1" "$2" "$3" "$4" "${5:+$5 }--payload=empty --out-range=<s1 --lua-desync=send:tcp_md5"
+		pktws_hostfake_vary_  "$1" "$2" "$3" "$4" "${5:+$5 }--payload=empty --out-range=<s1 --lua-desync=send:$TCP_MD5"
 }
 
 pktws_check_hostfake()
@@ -29,12 +29,12 @@ pktws_check_hostfake()
 	# $2 - domain
 	# $3 - PRE args for nfqws2
 	local testf=$1 domain="$2" pre="$3"
-	local ok ttls attls f fake fooling
+	local ok ttls attls f fooling
 
 	[ "$need_hostfakesplit" = 0 ] && return 0
 
-	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
-	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
+	[ "$MAX_TTL" = 0 ] || ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
+	[ "$MAX_AUTOTTL_DELTA" = 0 ] || attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
 
 	ok=0
 	for ttl in $ttls; do
@@ -69,7 +69,7 @@ pktws_check_http()
 	local FAKE="$FAKE_HTTP"
 
 	if [ -n "$FAKE_HTTP" ]; then
-		fake=bfake
+		fake=fake_http
 	else
 		fake=fake_default_http
 	fi
@@ -83,13 +83,11 @@ pktws_check_https_tls()
 	# $2 - domain
 	# $3 - PRE args for nfqws2
 
-	[ "$NOTEST_FAKE_HOSTFAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return 0; }
-
 	local PAYLOAD="--payload=tls_client_hello"
 	local FAKE="$FAKE_HTTPS"
 
 	if [ -n "$FAKE_HTTPS" ]; then
-		fake=bfake
+		fake=fake_tls
 	else
 		fake=fake_default_tls
 	fi
@@ -101,6 +99,9 @@ pktws_check_https_tls12()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKE_HOSTFAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return 0; }
+
 	pktws_check_https_tls "$1" "$2" && [ "$SCANLEVEL" != force ] && return
 	pktws_check_https_tls "$1" "$2" --lua-desync=wssize:wsize=1:scale=6
 }
@@ -109,5 +110,8 @@ pktws_check_https_tls13()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKE_HOSTFAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return 0; }
+
 	pktws_check_https_tls "$1" "$2"
 }

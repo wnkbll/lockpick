@@ -95,7 +95,7 @@ end_with_newline()
 }
 trim()
 {
-	awk '{gsub(/^ +| +$/,"")}1'
+	awk '{gsub(/^[ \t]+|[ \t]+$/,"")}1'
 }
 split_by_separator()
 {
@@ -119,7 +119,7 @@ dir_is_not_empty()
 	# $1 - directory
 	local n
 	[ -d "$1" ] || return 1
-	n=$(ls "$1" | wc -c | xargs)
+	n=$(ls -A "$1" | wc -c | xargs)
 	[ "$n" != 0 ]
 }
 
@@ -172,15 +172,23 @@ unique()
 
 is_linked_to_busybox()
 {
-	local IFS F P
-	
+	local IFS F P BB
+
+	BB="$(which busybox)"
+
 	IFS=:
 	for path in $PATH; do
-		F=$path/$1
-		P="$(readlink $F)"
-		if [ -z "$P" ] && [ -x $F ] && [ ! -L $F ]; then return 1; fi
-		[ "${P%busybox*}" != "$P" ] && return
+		F="$path/$1"
+		if [ -L "$F" ]; then
+			P="$(readlink $F)"
+			if [ -z "$P" ] && [ -x $F ] && [ ! -L $F ]; then return 1; fi
+			[ "${P%busybox*}" != "$P" ] && return
+		elif [ -f "$F" -a -n "$BB" ]; then
+			# possible hardlink
+			[ $(get_dir_inode "$F") = $(get_dir_inode "$BB") ] && return
+		fi
 	done
+	return 1
 }
 get_dir_inode()
 {
@@ -335,7 +343,7 @@ setup_md5()
 {
 	[ -n "$MD5" ] && return
 	MD5=md5sum
-	exists $MD5 || MD5=md5
+	exists $MD5 || MD5="md5 -q"
 }
 
 md5f()
@@ -358,7 +366,7 @@ random()
 	local r rs
 	setup_random
 	if [ -c /dev/urandom ]; then
-		read rs </dev/urandom
+		rs=$(dd if=/dev/urandom count=1 bs=16 2>/dev/null | hexdump -e '1 "%02x"')
 	else
 		rs="$RANDOM$RANDOM$(date)"
 	fi
@@ -386,9 +394,9 @@ shell_name()
 process_exists()
 {
 	if exists pgrep; then
-		pgrep ^$1$ >/dev/null
+		pgrep "^$1$" >/dev/null
 	elif exists pidof; then
-		pidof $1 >/dev/null
+		pidof "$1" >/dev/null
 	else
 		return 1
 	fi 

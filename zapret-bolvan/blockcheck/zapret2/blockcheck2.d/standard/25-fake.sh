@@ -18,8 +18,8 @@ pktws_check_http()
 
 	need_fake=0
 
-	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
-	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
+	[ "$MAX_TTL" = 0 ] || ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
+	[ "$MAX_AUTOTTL_DELTA" = 0 ] || attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
 
 	ok_any=0
 	ok=0
@@ -40,7 +40,7 @@ pktws_check_http()
 		for ff in $fake 0x00000000; do
 			pktws_curl_test_update $testf $domain ${FAKE_HTTP:+--blob=fake_http:@"$FAKE_HTTP" }$PAYLOAD --lua-desync=fake:blob=$ff:$fooling:repeats=$FAKE_REPEATS && ok=1
 			# duplicate SYN with MD5
-			contains "$fooling" tcp_md5 && pktws_curl_test_update $testf $domain ${FAKE_HTTP:+--blob=$fake:@"$FAKE_HTTP" }$PAYLOAD --lua-desync=fake:blob=$ff:$fooling:repeats=$FAKE_REPEATS --payload empty "--out-range=<s1" --lua-desync=send:tcp_md5 && ok=1
+			contains "$fooling" tcp_md5 && pktws_curl_test_update $testf $domain ${FAKE_HTTP:+--blob=$fake:@"$FAKE_HTTP" }$PAYLOAD --lua-desync=fake:blob=$ff:$fooling:repeats=$FAKE_REPEATS --payload=empty "--out-range=<s1" --lua-desync=send:$TCP_MD5 && ok=1
 		done
 	done
 	for ttl in $attls; do
@@ -55,8 +55,8 @@ pktws_check_http()
 	done
 
 	[ $ok = 0 -a "$SCANLEVEL" != force ] && need_fake=1
-	[ $ok = 1 ] && okany=1
-	[ $okany = 1 ]
+	[ $ok = 1 ] && ok_any=1
+	[ $ok_any = 1 ]
 }
 
 pktws_fake_https_vary_()
@@ -76,7 +76,7 @@ pktws_fake_https_vary()
 	pktws_fake_https_vary_ "$1" "$2" "$3" "$4" "$5" && ok_any=1
 	# duplicate SYN with MD5
 	contains "$fooling" tcp_md5 && \
-		pktws_fake_https_vary_  "$1" "$2" "$3" "$4" "${5:+$5 }--payload=empty --out-range=<s1 --lua-desync=send:tcp_md5" && ok_any=1
+		pktws_fake_https_vary_  "$1" "$2" "$3" "$4" "${5:+$5 }--payload=empty --out-range=<s1 --lua-desync=send:$TCP_MD5" && ok_any=1
 	[ "$ok_any" = 1 ]
 }
 
@@ -85,8 +85,6 @@ pktws_check_https_tls()
 	# $1 - test function
 	# $2 - domain
 	# $3 - PRE args for nfqws2
-
-	[ "$NOTEST_FAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
 
 	local testf=$1 domain="$2" pre="$3"
 	local ok ok_any ttls attls f fake fooling
@@ -102,8 +100,8 @@ pktws_check_https_tls()
 
 	need_fake=0
 
-	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
-	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
+	[ "$MAX_TTL" = 0 ] || ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
+	[ "$MAX_AUTOTTL_DELTA" = 0 ] || attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
 
 	ok_any=0
 	ok=0
@@ -125,14 +123,17 @@ pktws_check_https_tls()
 	done
 
 	[ $ok = 0 -a "$SCANLEVEL" != force ] && need_fake=1
-	[ $ok = 1 ] && okany=1
-	[ $okany = 1 ]
+	[ $ok = 1 ] && ok_any=1
+	[ $ok_any = 1 ]
 }
 
 pktws_check_https_tls12()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
+
 	pktws_check_https_tls "$1" "$2" && [ "$SCANLEVEL" != force ] && return
 
 	# do not use 'need' values obtained with wssize
@@ -145,5 +146,8 @@ pktws_check_https_tls13()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKE_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
+
 	pktws_check_https_tls "$1" "$2"
 }

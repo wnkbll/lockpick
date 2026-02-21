@@ -14,8 +14,8 @@ pktws_check_faked()
 	local PAYLOAD="--payload=$3"
 	local FAKED_PATTERN="$5"
 
-	ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
-	attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
+	[ "$MAX_TTL" = 0 ] || ttls=$(seq -s ' ' $MIN_TTL $MAX_TTL)
+	[ "$MAX_AUTOTTL_DELTA" = 0 ] || attls=$(seq -s ' ' $MIN_AUTOTTL_DELTA $MAX_AUTOTTL_DELTA)
 
 	# do not test fakedsplit if multisplit works
 	[ "$need_multisplit" = 0 -a "$SCANLEVEL" != force ] || splitfs=fakedsplit
@@ -42,7 +42,7 @@ pktws_check_faked()
 			for split in $splits; do
 				pktws_curl_test_update $testf $domain ${FAKED_PATTERN:+--blob=faked_pat:@"$FAKED_PATTERN" }$pre $PAYLOAD --lua-desync=$splitf:${FAKED_PATTERN:+pattern=faked_pat:}pos=$split:$fooling && ok=1
 				# duplicate SYN with MD5
-				contains "$fooling" tcp_md5 && pktws_curl_test_update $testf $domain ${FAKED_PATTERN:+--blob=faked_pat:@"$FAKED_PATTERN" }$pre $PAYLOAD --lua-desync=$splitf:${FAKED_PATTERN:+pattern=faked_pat:}pos=$split:$fooling:repeats=$FAKE_REPEATS --payload empty --out-range="<s1" --lua-desync=send:tcp_md5 && ok=1
+				contains "$fooling" tcp_md5 && pktws_curl_test_update $testf $domain ${FAKED_PATTERN:+--blob=faked_pat:@"$FAKED_PATTERN" }$pre $PAYLOAD --lua-desync=$splitf:${FAKED_PATTERN:+pattern=faked_pat:}pos=$split:$fooling:repeats=$FAKE_REPEATS --payload=empty --out-range="<s1" --lua-desync=send:$TCP_MD5 && ok=1
 			done
 		done
 		for ttl in $attls; do
@@ -77,7 +77,6 @@ pktws_check_https_tls()
 	# $1 - test function
 	# $2 - domain
 	# $3 - PRE args for nfqws2
-	[ "$NOTEST_FAKED_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
 
 	local splits='2 1 sniext+1 sniext+4 host+1 midsld 1,midsld 1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1'
 	pktws_check_faked $1 "$2" tls_client_hello "$splits" "$FAKED_PATTERN_HTTPS" "$3"
@@ -87,6 +86,9 @@ pktws_check_https_tls12()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKED_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
+
 	pktws_check_https_tls "$1" "$2" && [ "$SCANLEVEL" != force ] && return
 
 	# do not use 'need' values obtained with wssize
@@ -99,5 +101,8 @@ pktws_check_https_tls13()
 {
 	# $1 - test function
 	# $2 - domain
+
+	[ "$NOTEST_FAKED_HTTPS" = 1 ] && { echo "SKIPPED"; return; }
+
 	pktws_check_https_tls "$1" "$2"
 }

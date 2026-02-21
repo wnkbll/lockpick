@@ -26,7 +26,6 @@ CURL=${CURL:-curl}
 
 TEST_DEFAULT=${TEST_DEFAULT:-standard}
 DOMAINS_DEFAULT=${DOMAINS_DEFAULT:-rutracker.org}
-QNUM=${QNUM:-59781}
 SOCKS_PORT=${SOCKS_PORT:-1993}
 WS_UID=${WS_UID:-1}
 WS_GID=${WS_GID:-3003}
@@ -35,26 +34,28 @@ DVTWS2=${DVTWS2:-${ZAPRET_BASE}/nfq2/dvtws2}
 WINWS2=${WINWS2:-${ZAPRET_BASE}/nfq2/winws2}
 MDIG=${MDIG:-${ZAPRET_BASE}/mdig/mdig}
 DESYNC_MARK=0x10000000
-IPFW_RULE_NUM=${IPFW_RULE_NUM:-1}
-IPFW_DIVERT_PORT=${IPFW_DIVERT_PORT:-59780}
 CURL_MAX_TIME=${CURL_MAX_TIME:-2}
 CURL_MAX_TIME_QUIC=${CURL_MAX_TIME_QUIC:-$CURL_MAX_TIME}
 CURL_MAX_TIME_DOH=${CURL_MAX_TIME_DOH:-2}
-MIN_TTL=${MIN_TTL:-1}
-MAX_TTL=${MAX_TTL:-12}
-MIN_AUTOTTL_DELTA=${MIN_AUTOTTL_DELTA:-1}
-MAX_AUTOTTL_DELTA=${MAX_AUTOTTL_DELTA:-5}
 USER_AGENT=${USER_AGENT:-Mozilla}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
 QUIC_PORT=${QUIC_PORT:-443}
 UNBLOCKED_DOM=${UNBLOCKED_DOM:-iana.org}
-PARALLEL_OUT=/tmp/zapret_parallel
 SIM_SUCCESS_RATE=${SIM_SUCCESS_RATE:-10}
 
-HDRTEMP=/tmp/zapret-hdr
+IPFW_RULE_MAX=${IPFW_RULE_MAX:-999}
+IPFW_RULE_NUM=${IPFW_RULE_NUM:-$(($$ % $IPFW_RULE_MAX + 1))}
+IPFW_DIVERT_PORT=${IPFW_DIVERT_PORT:-$(($$ % 64536 + 1000))}
+QNUM=${QNUM:-$(($$ % 64536 + 1000))}
 
-NFT_TABLE=blockcheck
+IPSET_FILE=/tmp/blockcheck_ipset_$$.txt
+PARALLEL_OUT=/tmp/zapret_parallel_$$
+HDRTEMP=/tmp/zapret-hdr-$$
+NFT_TABLE=blockcheck$$
+IPT_OUT_CHAIN=blockcheck_output_$$
+IPT_IN_CHAIN=blockcheck_input_$$
+IPT_COMMENT="-m comment --comment blockcheck_$$"
 
 DNSCHECK_DNS=${DNSCHECK_DNS:-8.8.8.8 1.1.1.1 77.88.8.1}
 DNSCHECK_DOM=${DNSCHECK_DOM:-pornhub.com ej.ru rutracker.org www.torproject.org bbc.com}
@@ -63,7 +64,6 @@ DNSCHECK_DIG1=/tmp/dig1.txt
 DNSCHECK_DIG2=/tmp/dig2.txt
 DNSCHECK_DIGS=/tmp/digs.txt
 
-IPSET_FILE=/tmp/blockcheck_ipset.txt
 
 unset PF_STATUS
 PF_RULES_SAVE=/tmp/pf-zapret-save.conf
@@ -244,7 +244,7 @@ mdig_vars()
 	# $1 - ip version 4/6
 	# $2 - hostname
 
-	hostvar=$(echo $2 | sed -e 's/[\./?&#@%*$^:~=!()+-]/_/g')
+	hostvar=$(echo $2 | sed -e 's/[\./?&#@%*$^:~=!()+-]/_/g' | tr 'A-Z' 'a-z')
 	cachevar=DNSCACHE_${hostvar}_$1
 	countvar=${cachevar}_COUNT
 	eval count=\$${countvar}
@@ -301,7 +301,7 @@ mdig_resolve_all()
 	mdig_vars "$1" "$sdom"
 	if [ -n "$count" ]; then
 		n=0
-		while [ "$n" -le $count ]; do
+		while [ "$n" -lt $count ]; do
 			eval ip__=\$${cachevar}_$n
 			if [ -n "$ips__" ]; then
 				ips__="$ips__ $ip__"
@@ -412,8 +412,14 @@ zp_already_running()
 		CYGWIN)
 			win_process_exists $PKTWSD || win_process_exists winws || win_process_exists goodbyedpi
 			;;
-		*)
+		FreeBSD|OpenBSD)
+			process_exists $PKTWSD || process_exists tpws || process_exists dvtws
+			;;
+		Linux)
 			process_exists $PKTWSD || process_exists tpws || process_exists nfqws
+			;;
+		*)
+			return 1
 	esac
 }
 check_already()
@@ -637,11 +643,11 @@ curl_with_dig()
 	# $2 - domain name
 	# $3 - port
 	# $4+ - curl params
-	local dom=$2 port=$3
+	local dom="$2" port=$3
 	local sdom suri ip
 
 	split_by_separator "$dom" / sdom suri
-	mdig_resolve $1 ip $sdom
+	mdig_resolve $1 ip "$sdom"
 	shift ; shift ; shift
 	if [ -n "$ip" ]; then
 		curl_with_subst_ip "$sdom" "$port" "$ip" "$@"
@@ -656,12 +662,12 @@ curl_probe()
 	# $3 - port
 	# $4 - subst ip
 	# $5+ - curl params
-	local ipv=$1 dom=$2 port=$3 subst=$4
+	local ipv=$1 dom="$2" port=$3 subst=$4
 	shift; shift; shift; shift
 	if [ -n "$subst" ]; then
-		curl_with_subst_ip $dom $port $subst "$@"
+		curl_with_subst_ip "$dom" $port $subst "$@"
 	else
-		curl_with_dig $ipv $dom $port "$@"
+		curl_with_dig $ipv "$dom" $port "$@"
 	fi
 }
 curl_test_http()
@@ -672,7 +678,7 @@ curl_test_http()
 	# $4 - "detail" - detail info
 
 	local code loc hdrt="${HDRTEMP}_${!:-$$}.txt" dom="$(tolower "$2")"
-	curl_probe $1 $2 $HTTP_PORT "$3" -SsD "$hdrt" -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT "http://$2" -o /dev/null 2>&1 || {
+	curl_probe $1 "$2" $HTTP_PORT "$3" -SsD "$hdrt" -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT "http://$2" -o /dev/null 2>&1 || {
 		code=$?
 		rm -f "$hdrt"
 		return $code
@@ -684,6 +690,7 @@ curl_test_http()
 		code=$(hdrfile_http_code "$hdrt")
 		[ "$code" = 301 -o "$code" = 302 -o "$code" = 307 -o "$code" = 308 ] && {
 			loc=$(hdrfile_location "$hdrt")
+			split_by_separator "$dom" / dom
 			tolower "$loc" | grep -qE "^https?://.*$dom(/|$)" ||
 			tolower "$loc" | grep -vqE '^https?://' || {
 				echo suspicious redirection $code to : $loc
@@ -707,7 +714,7 @@ curl_test_https_tls12()
 	# $3 - subst ip
 
 	# do not use tls 1.3 to make sure server certificate is not encrypted
-	curl_probe $1 $2 $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.2 $TLSMAX12 "https://$2" -o /dev/null 2>&1
+	curl_probe $1 "$2" $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.2 $TLSMAX12 "https://$2" -o /dev/null 2>&1
 }
 curl_test_https_tls13()
 {
@@ -716,7 +723,7 @@ curl_test_https_tls13()
 	# $3 - subst ip
 
 	# force TLS1.3 mode
-	curl_probe $1 $2 $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.3 $TLSMAX13 "https://$2" -o /dev/null 2>&1
+	curl_probe $1 "$2" $HTTPS_PORT "$3" $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME $CURL_OPT --tlsv1.3 $TLSMAX13 "https://$2" -o /dev/null 2>&1
 }
 
 curl_test_http3()
@@ -725,7 +732,7 @@ curl_test_http3()
 	# $2 - domain name
 
 	# force QUIC only mode without tcp
-	curl_with_dig $1 $2 $QUIC_PORT $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME_QUIC --http3-only $CURL_OPT "https://$2" -o /dev/null 2>&1
+	curl_with_dig $1 "$2" $QUIC_PORT $HTTPS_HEAD -Ss -A "$USER_AGENT" --max-time $CURL_MAX_TIME_QUIC --http3-only $CURL_OPT "https://$2" -o /dev/null 2>&1
 }
 
 ipt_aux_scheme()
@@ -735,24 +742,24 @@ ipt_aux_scheme()
 	# $3 - port
 
 	# to avoid possible INVALID state drop
-	[ "$2" = tcp ] && IPT_ADD_DEL $1 INPUT -p $2 --sport $3 ! --syn -j ACCEPT
+	[ "$2" = tcp ] && IPT_ADD_DEL $1 INPUT -p $2 --sport $3 ! --syn $IPT_COMMENT -j ACCEPT
 
 	local icmp_filter="-p icmp -m icmp --icmp-type"
 	[ "$IPV" = 6 ] && icmp_filter="-p icmpv6 -m icmp6 --icmpv6-type"
-	IPT_ADD_DEL $1 INPUT $icmp_filter time-exceeded -m connmark --mark $DESYNC_MARK/$DESYNC_MARK -j DROP 
+	IPT_ADD_DEL $1 INPUT $icmp_filter time-exceeded -m connmark --mark $DESYNC_MARK/$DESYNC_MARK $IPT_COMMENT -j DROP 
 
 	# for strategies with incoming packets involved (autottl)
-	IPT_ADD_DEL $1 OUTPUT -p $2 --dport $3 -m conntrack --ctstate INVALID -j ACCEPT
+	IPT_ADD_DEL $1 OUTPUT -p $2 --dport $3 -m conntrack --ctstate INVALID $IPT_COMMENT -j ACCEPT
 	if [ "$IPV" = 6 -a -n "$IP6_DEFRAG_DISABLE" ]; then
 		# the only way to reliable disable ipv6 defrag. works only in 4.16+ kernels
-		IPT_ADD_DEL $1 OUTPUT -t raw -p $2 -m frag -j CT --notrack
+		IPT_ADD_DEL $1 OUTPUT -t raw -p $2 -m frag $IPT_COMMENT -j CT --notrack
 	elif [ "$IPV" = 4 ]; then
 		# enable fragments
-		IPT_ADD_DEL $1 OUTPUT -f -j ACCEPT
+		IPT_ADD_DEL $1 OUTPUT -f $IPT_COMMENT -j ACCEPT
 	fi
 	# enable everything generated by nfqws (works only in OUTPUT, not in FORWARD)
 	# raw table may not be present
-	IPT_ADD_DEL $1 OUTPUT -t raw -m mark --mark $DESYNC_MARK/$DESYNC_MARK -j CT --notrack
+	IPT_ADD_DEL $1 OUTPUT -t raw -m mark --mark $DESYNC_MARK/$DESYNC_MARK $IPT_COMMENT -j CT --notrack
 }
 ipt_scheme()
 {
@@ -762,18 +769,18 @@ ipt_scheme()
 
 	local ip
 
-	$IPTABLES -t mangle -N blockcheck_output 2>/dev/null
-	$IPTABLES -t mangle -F blockcheck_output
-	IPT OUTPUT -t mangle -j blockcheck_output
+	$IPTABLES -t mangle -N $IPT_OUT_CHAIN 2>/dev/null
+	$IPTABLES -t mangle -F $IPT_OUT_CHAIN
+	IPT OUTPUT -t mangle -j $IPT_OUT_CHAIN
 
 	# prevent loop
-	$IPTABLES -t mangle -A blockcheck_output -m mark --mark $DESYNC_MARK/$DESYNC_MARK -j RETURN
-	$IPTABLES -t mangle -A blockcheck_output ! -p $1 -j RETURN
-	$IPTABLES -t mangle -A blockcheck_output -p $1 ! --dport $2 -j RETURN
+	$IPTABLES -t mangle -A $IPT_OUT_CHAIN -m mark --mark $DESYNC_MARK/$DESYNC_MARK -j RETURN
+	$IPTABLES -t mangle -A $IPT_OUT_CHAIN ! -p $1 -j RETURN
+	$IPTABLES -t mangle -A $IPT_OUT_CHAIN -p $1 ! --dport $2 -j RETURN
 
 	for ip in $3; do
-		$IPTABLES -t mangle -A blockcheck_output -d $ip -j CONNMARK --or-mark $DESYNC_MARK
-		$IPTABLES -t mangle -A blockcheck_output -d $ip -j NFQUEUE --queue-num $QNUM
+		$IPTABLES -t mangle -A $IPT_OUT_CHAIN -d $ip -j CONNMARK --or-mark $DESYNC_MARK
+		$IPTABLES -t mangle -A $IPT_OUT_CHAIN -d $ip -j NFQUEUE --queue-num $QNUM
 	done
 
 	ipt_aux_scheme 1 $1 $2
@@ -849,9 +856,9 @@ pktws_ipt_unprepare()
 	case "$FWTYPE" in
 		iptables)
 			ipt_aux_scheme 0 $1 $2
-			IPT_DEL OUTPUT -t mangle -j blockcheck_output
-			$IPTABLES -t mangle -F blockcheck_output 2>/dev/null
-			$IPTABLES -t mangle -X blockcheck_output 2>/dev/null
+			IPT_DEL OUTPUT -t mangle -j $IPT_OUT_CHAIN
+			$IPTABLES -t mangle -F $IPT_OUT_CHAIN 2>/dev/null
+			$IPTABLES -t mangle -X $IPT_OUT_CHAIN 2>/dev/null
 			;;
 		nftables)
 			nft delete table inet $NFT_TABLE 2>/dev/null
@@ -879,17 +886,17 @@ pktws_ipt_prepare_tcp()
 
 	pktws_ipt_prepare tcp $1 "$2"
 
-	# for autottl mode
+	# for autottl mode and tcp_mss detection
 	case "$FWTYPE" in
 		iptables)
-			$IPTABLES -N blockcheck_input -t mangle 2>/dev/null
-			$IPTABLES -F blockcheck_input -t mangle 2>/dev/null
-			IPT INPUT -t mangle -j blockcheck_input
-			$IPTABLES -t mangle -A blockcheck_input ! -p tcp -j RETURN
-			$IPTABLES -t mangle -A blockcheck_input -p tcp ! --sport $1 -j RETURN
-			$IPTABLES -t mangle -A blockcheck_input -p tcp ! --tcp-flags SYN,ACK SYN,ACK -j RETURN
+			$IPTABLES -N $IPT_IN_CHAIN -t mangle 2>/dev/null
+			$IPTABLES -F $IPT_IN_CHAIN -t mangle 2>/dev/null
+			IPT INPUT -t mangle -j $IPT_IN_CHAIN
+			$IPTABLES -t mangle -A $IPT_IN_CHAIN ! -p tcp -j RETURN
+			$IPTABLES -t mangle -A $IPT_IN_CHAIN -p tcp ! --sport $1 -j RETURN
+			$IPTABLES -t mangle -A $IPT_IN_CHAIN -p tcp ! --tcp-flags SYN,ACK SYN,ACK -j RETURN
 			for ip in $2; do
-				$IPTABLES -A blockcheck_input -t mangle -s $ip -j NFQUEUE --queue-num $QNUM
+				$IPTABLES -A $IPT_IN_CHAIN -t mangle -s $ip -j NFQUEUE --queue-num $QNUM
 			done
 			;;
 		nftables)
@@ -913,9 +920,9 @@ pktws_ipt_unprepare_tcp()
 
 	case "$FWTYPE" in
 		iptables)
-			IPT_DEL INPUT -t mangle -j blockcheck_input
-			$IPTABLES -t mangle -F blockcheck_input 2>/dev/null
-			$IPTABLES -t mangle -X blockcheck_input 2>/dev/null
+			IPT_DEL INPUT -t mangle -j $IPT_IN_CHAIN
+			$IPTABLES -t mangle -F $IPT_IN_CHAIN 2>/dev/null
+			$IPTABLES -t mangle -X $IPT_IN_CHAIN 2>/dev/null
 			;;
 	esac
 }
@@ -943,7 +950,9 @@ pktws_start()
 			"$DVTWS2" --port=$IPFW_DIVERT_PORT --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
 			;;
 		CYGWIN)
-			"$WINWS2" $WF --ipset="$IPSET_FILE" --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
+			# allow multiple PKTWS instances with the same wf filter but different ipset
+			# some methods require empty acks
+			"$WINWS2" --wf-dup-check=0 --wf-tcp-empty=1 $WF --ipset="$IPSET_FILE" --lua-init=@"$ZAPRET_BASE/lua/zapret-lib.lua" --lua-init=@"$ZAPRET_BASE/lua/zapret-antidpi.lua" "$@" >/dev/null &
 			;;
 	esac
 	PID=$!
@@ -994,7 +1003,7 @@ curl_test()
 	if [ "$PARALLEL" = 1 ]; then
 		rm -f "${PARALLEL_OUT}"*
 		for n in $(seq -s ' ' 1 $REPEATS); do
-			$1 "$IPV" $2 $3 "$4" >"${PARALLEL_OUT}_$n" &
+			$1 "$IPV" "$2" $3 "$4" >"${PARALLEL_OUT}_$n" &
 			pids="${pids:+$pids }$!"
 		done
 		n=1
@@ -1013,7 +1022,7 @@ curl_test()
 		while [ $n -lt $REPEATS ]; do
 			n=$(($n+1))
 			[ $REPEATS -gt 1 ] && printf "[attempt $n] "
-			if $1 "$IPV" $2 $3 "$4" ; then
+			if $1 "$IPV" "$2" $3 "$4" ; then
 				[ $REPEATS -gt 1 ] && echo 'AVAILABLE'
 			else
 				code=$?
@@ -1038,7 +1047,7 @@ ws_curl_test()
 	# $2 - test function
 	# $3 - domain
 	# $4,$5,$6, ... - ws params
-	local code ws_start=$1 testf=$2 dom=$3
+	local code ws_start=$1 testf=$2 dom="$3"
 
 	[ "$SIMULATE" = 1 ] && {
 		n=$(random 0 99)
@@ -1054,7 +1063,7 @@ ws_curl_test()
 	shift
 	shift
 	$ws_start "$@"
-	curl_test $testf $dom
+	curl_test $testf "$dom"
 	code=$?
 	ws_kill
 	return $code
@@ -1064,11 +1073,11 @@ pktws_curl_test()
 	# $1 - test function
 	# $2 - domain
 	# $3,$4,$5, ... - nfqws/dvtws params
-	local testf=$1 dom=$2 strategy code
+	local testf=$1 dom="$2" strategy code
 
 	shift; shift;
 	echo - $testf ipv$IPV $dom : $PKTWSD ${WF:+$WF }${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }$@${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_POST_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}
-	ws_curl_test pktws_start $testf $dom ${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }"$@"${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_POST_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}
+	ws_curl_test pktws_start $testf "$dom" ${PKTWS_EXTRA_PRE:+$PKTWS_EXTRA_PRE }${PKTWS_EXTRA_PRE_1:+"$PKTWS_EXTRA_PRE_1" }${PKTWS_EXTRA_PRE_2:+"$PKTWS_EXTRA_PRE_2" }${PKTWS_EXTRA_PRE_3:+"$PKTWS_EXTRA_PRE_3" }${PKTWS_EXTRA_PRE_4:+"$PKTWS_EXTRA_PRE_4" }${PKTWS_EXTRA_PRE_5:+"$PKTWS_EXTRA_PRE_5" }${PKTWS_EXTRA_PRE_6:+"$PKTWS_EXTRA_PRE_6" }${PKTWS_EXTRA_PRE_7:+"$PKTWS_EXTRA_PRE_7" }${PKTWS_EXTRA_PRE_8:+"$PKTWS_EXTRA_PRE_8" }${PKTWS_EXTRA_PRE_9:+"$PKTWS_EXTRA_PRE_9" }"$@"${PKTWS_EXTRA_POST:+ $PKTWS_EXTRA_POST}${PKTWS_EXTRA_POST_1:+ "$PKTWS_EXTRA_POST_1"}${PKTWS_EXTRA_POST_2:+ "$PKTWS_EXTRA_POST_2"}${PKTWS_EXTRA_POST_3:+ "$PKTWS_EXTRA_POST_3"}${PKTWS_EXTRA_POST_4:+ "$PKTWS_EXTRA_POST_4"}${PKTWS_EXTRA_POST_5:+ "$PKTWS_EXTRA_POST_5"}${PKTWS_EXTRA_POST_6:+ "$PKTWS_EXTRA_POST_6"}${PKTWS_EXTRA_POST_7:+ "$PKTWS_EXTRA_POST_7"}${PKTWS_EXTRA_POST_8:+ "$PKTWS_EXTRA_POST_8"}${PKTWS_EXTRA_POST_9:+ "$PKTWS_EXTRA_POST_9"}
 
 	code=$?
 	[ "$code" = 0 ] && {
@@ -1090,11 +1099,11 @@ xxxws_curl_test_update()
 	# $2 - test function
 	# $3 - domain
 	# $4,$5,$6, ... - nfqws2/dvtws2 params
-	local code xxxf=$1 testf=$2 dom=$3
+	local code xxxf=$1 testf=$2 dom="$3"
 	shift
 	shift
 	shift
-	$xxxf $testf $dom "$@"
+	$xxxf $testf "$dom" "$@"
 	code=$?
 	[ $code = 0 ] && strategy="${strategy:-$@}"
 	return $code
@@ -1318,7 +1327,6 @@ check_domain_http_tcp()
 	local ips
 
 	# in case was interrupted before
-	pktws_ipt_unprepare_tcp $2
 	ws_kill
 
 	check_domain_prolog $1 $2 $4 || return
@@ -1346,7 +1354,6 @@ check_domain_http_udp()
 	local ips
 
 	# in case was interrupted before
-	pktws_ipt_unprepare_udp $2
 	ws_kill
 
 	check_domain_prolog $1 $2 $3 || return

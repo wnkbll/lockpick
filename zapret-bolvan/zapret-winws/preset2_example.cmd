@@ -1,4 +1,4 @@
-start "zapret: http,https,quic" /min "%~dp0winws2.exe" ^
+start "zapret2" /min "%~dp0winws2.exe" ^
 --wf-tcp-out=80,443  ^
 --lua-init=@"%~dp0lua\zapret-lib.lua" --lua-init=@"%~dp0lua\zapret-antidpi.lua" ^
 --lua-init="fake_default_tls = tls_mod(fake_default_tls,'rnd,rndsni')" ^
@@ -26,16 +26,13 @@ start "zapret: http,https,quic" /min "%~dp0winws2.exe" ^
    --lua-desync=multidisorder:pos=midsld ^
   --new ^
 --filter-udp=443 --filter-l7=quic --hostlist="%~dp0files\list-youtube.txt" ^
-  --out-range=-d10 ^
   --payload=quic_initial ^
    --lua-desync=fake:blob=quic_google:repeats=11 ^
   --new ^
 --filter-udp=443 --filter-l7=quic ^
-  --out-range=-d10 ^
   --payload=quic_initial ^
    --lua-desync=fake:blob=fake_default_quic:repeats=11 ^
   --new ^
 --filter-l7=wireguard,stun,discord ^
-  --out-range=-d10 ^
   --payload=wireguard_initiation,wireguard_cookie,stun,discord_ip_discovery ^
    --lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=2
