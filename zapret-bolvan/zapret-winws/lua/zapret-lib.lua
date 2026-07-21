@@ -1,4 +1,4 @@
-NFQWS2_COMPAT_VER_REQUIRED=5
+NFQWS2_COMPAT_VER_REQUIRED=6
 
 if NFQWS2_COMPAT_VER~=NFQWS2_COMPAT_VER_REQUIRED then
 	error("Incompatible NFQWS2_COMPAT_VER. Use pktws and lua scripts from the same release !")
@@ -96,12 +96,12 @@ function detect_payload_str(ctx, desync)
 		error("detect_payload_str: missing 'pattern'")
 	end
 	local data = desync.reasm_data or desync.dis.payload
-	local b = string.find(data,desync.arg.pattern,1,true)
+	local b = data and string.find(data,desync.arg.pattern,1,true)
 	if b then
-		DLOG("detect_payload_str: detected '"..desync.arg.payload.."'")
+		DLOG("detect_payload_str: detected '"..(desync.arg.payload or '?').."'")
 		if desync.arg.payload then desync.l7payload = desync.arg.payload end
 	else
-		DLOG("detect_payload_str: not detected '"..desync.arg.payload.."'")
+		DLOG("detect_payload_str: not detected '"..(desync.arg.payload or '?').."'")
 		if desync.arg.undetected then desync.l7payload = desync.arg.undetected end
 	end
 end
@@ -149,11 +149,13 @@ end
 
 -- applies # and $ prefixes. #var means var length, %var means var value
 function apply_arg_prefix(desync)
+	-- prevent double apply
+	if desync.arg.__prefix_applied then return end
 	for a,v in pairs(desync.arg) do
 		local c = string.sub(v,1,1)
 		if c=='#' then
 			local blb = blob(desync,string.sub(v,2))
-			desync.arg[a] = tostring((type(blb)=='string' or type(blb)=='table') and #blb or 0)
+			desync.arg[a] = tostring(type(blb)=='string' and #blb or 0)
 		elseif c=='%' then
 			desync.arg[a] = blob(desync,string.sub(v,2))
 		elseif c=='\\' then
@@ -163,6 +165,7 @@ function apply_arg_prefix(desync)
 			end
 		end
 	end
+	desync.arg.__prefix_applied = true
 end
 -- copy instance identification and args from execution plan to desync table
 -- NOTE : to not lose VERDICT_MODIFY dissect changes pass original desync table
@@ -173,7 +176,7 @@ function apply_execution_plan(desync, instance)
 	desync.func_n = instance.func_n
 	desync.func_instance = instance.func_instance
 	desync.arg = deepcopy(instance.arg)
-	apply_arg_prefix(desync)
+	-- no apply_arg_prefix here because it may refer non-existing blobs
 end
 -- produce resulting verdict from 2 verdicts
 function verdict_aggregate(v1, v2)
@@ -200,6 +203,9 @@ function plan_instance_execute_preapplied(desync, verdict, instance)
 	elseif not pos_check_range(desync, instance.range) then
 		DLOG("plan_instance_execute: not calling '"..desync.func_instance.."' because pos "..pos_str(desync,instance.range.from).." "..pos_str(desync,instance.range.to).." is out of range '"..pos_range_str(instance.range).."'")
 	else
+		-- condition is satisfied. here blobs must be referenced
+		apply_arg_prefix(desync)
+		desync.arg.__prefix_applied = nil
 		DLOG("plan_instance_execute: calling '"..desync.func_instance.."'")
 		verdict = verdict_aggregate(verdict,_G[instance.func](nil, desync))
 	end
@@ -337,9 +343,8 @@ end
 
 -- convert array a to packed string using 'packer' function. only numeric indexes starting from 1, order preserved
 function barray(a, packer)
-	local sa={}
 	if a then
-		local s=""
+		local sa={}
 		for i=1,#a do
 			sa[i] = packer(a[i])
 		end
@@ -348,16 +353,16 @@ function barray(a, packer)
 end
 -- convert table a to packed string using 'packer' function. any indexes, any order
 function btable(a, packer)
-	local sa={}
 	if a then
-		local s=""
+		local sa={}
+		local i=1
 		for k,v in pairs(a) do
-			sa[k] = packer(v)
+			sa[i] = packer(v)
+			i=i+1
 		end
 		return table.concat(sa)
 	end
 end
-
 -- sequence comparision functions. they work only within 2G interval
 -- seq1>=seq2
 function seq_ge(seq1, seq2)
@@ -633,7 +638,7 @@ function tls_mod_shim(desync, blob, modlist, payload)
 		if not val then
 			error("tls_mod_shim: non-existent var '"..var.."'")
 		end
-		modlist = string.sub(modlist,1,p1+3)..val..string.sub(modlist,p2+1)
+		modlist = string.sub(modlist,1,p1+3)..tostring(val)..string.sub(modlist,p2+1)
 	end
 	return tls_mod(blob,modlist,payload)
 end
@@ -645,7 +650,7 @@ function parse_tcp_flags(s)
 	local s_upper = string.upper(s)
 	for flag in string.gmatch(s_upper, "[^,]+") do
 		if flags[flag] then
- 			f = bitor(f,flags[flag])
+			f = bitor(f,flags[flag])
 		else
 			error("tcp flag '"..flag.."' is invalid")
 		end
@@ -755,6 +760,63 @@ function fix_ip6_next(ip6, last_proto)
 		ip6.ip6_nxt = last_proto or IPPROTO_NONE
 	end
 end
+
+function dis_ipsrc(dis)
+	if dis.ip then
+		return dis.ip.ip_src
+	elseif dis.ip6 then
+		return dis.ip6.ip6_src
+	end
+end
+function dis_ipdst(dis)
+	if dis.ip then
+		return dis.ip.ip_dst
+	elseif dis.ip6 then
+		return dis.ip6.ip6_dst
+	end
+end
+
+function dis_l4_name(dis)
+	local l4
+	if dis.tcp then
+		l4="tcp"
+	elseif dis.udp then
+		l4="udp"
+	elseif dis.icmp then
+		l4="icmp"
+	else
+		l4="raw"..ip_proto_l3(dis)
+	end
+	return l4
+end
+function dis_l4_ports(dis)
+	local p1,p2
+	if dis.tcp then
+		p1=dis.tcp.th_sport
+		p2=dis.tcp.th_dport
+	elseif dis.udp then
+		p1=dis.udp.uh_sport
+		p2=dis.udp.uh_dport
+	elseif dis.icmp then
+		p1=dis.icmp.icmp_type
+		p2=dis.icmp.icmp_code
+	end
+	return p1 and (p1..":"..p2) or "?"
+end
+
+function dis_timer_name(dis)
+	return table.concat({ntop(dis_ipsrc(dis)),"->",ntop(dis_ipdst(dis)),"_",dis_l4_name(dis),"_",dis_l4_ports(dis)})
+end
+function desync_timer_name(desync)
+	local name = dis_timer_name(desync.dis)
+	if desync.track then
+		name = name.."_n"..desync.track.pos.direct.pcounter
+	else
+		name = name.."_"..brandom_az09(10)
+	end
+	return name
+end
+
 
 -- reverses ip addresses, ports and seq/ack
 function dis_reverse(dis)
@@ -876,7 +938,11 @@ function apply_fooling(desync, dis, fooling_options)
 				if type(desync.track.lua_state.autottl_cache)~="table" then desync.track.lua_state.autottl_cache={} end
 				if type(desync.track.lua_state.autottl_cache[desync.func_instance])~="table" then desync.track.lua_state.autottl_cache[desync.func_instance]={} end
 				if not desync.track.lua_state.autottl_cache[desync.func_instance].autottl_found then
-					desync.track.lua_state.autottl_cache[desync.func_instance].autottl = autottl(desync.track.incoming_ttl,parse_autottl(arg_autottl))
+					local attl = parse_autottl(arg_autottl)
+					if not attl then
+						error("apply_fooling: invalid autottl value '"..arg_autottl.."'")
+					end
+					desync.track.lua_state.autottl_cache[desync.func_instance].autottl = autottl(desync.track.incoming_ttl,attl)
 					if desync.track.lua_state.autottl_cache[desync.func_instance].autottl then
 						desync.track.lua_state.autottl_cache[desync.func_instance].autottl_found = true
 							DLOG("apply_fooling: discovered autottl "..desync.track.lua_state.autottl_cache[desync.func_instance].autottl)
@@ -891,8 +957,11 @@ function apply_fooling(desync, dis, fooling_options)
 				DLOG("apply_fooling: cannot apply autottl because incoming ttl unknown")
 			end
 		end
-		if not ttl and tonumber(arg_ttl) then
+		if not ttl and arg_ttl then
 			ttl = tonumber(arg_ttl)
+			if not ttl or ttl<0 or ttl>255 then
+				error("apply_fooling: ip_ttl and ip6_ttl require valid value")
+			end
 		end
 		--io.stderr:write("TTL "..tostring(ttl).."\n")
 		return ttl
@@ -909,11 +978,19 @@ function apply_fooling(desync, dis, fooling_options)
 	-- use current packet if dissect not given
 	if not dis then dis = desync.dis end
 	if dis.tcp then
-		if tonumber(fooling_options.tcp_seq) then
-			dis.tcp.th_seq = u32add(dis.tcp.th_seq, fooling_options.tcp_seq)
+		if fooling_options.tcp_seq then
+			if tonumber(fooling_options.tcp_seq) then
+				dis.tcp.th_seq = u32add(dis.tcp.th_seq, fooling_options.tcp_seq)
+			else
+				error("apply_fooling: tcp_seq requires increment parameter. there's no default value.")
+			end
 		end
-		if tonumber(fooling_options.tcp_ack) then
-			dis.tcp.th_ack = u32add(dis.tcp.th_ack, fooling_options.tcp_ack)
+		if fooling_options.tcp_ack then
+			if tonumber(fooling_options.tcp_ack) then
+				dis.tcp.th_ack = u32add(dis.tcp.th_ack, fooling_options.tcp_ack)
+			else
+				error("apply_fooling: tcp_ack requires increment parameter. there's no default value.")
+			end
 		end
 		if fooling_options.tcp_flags_unset then
 			dis.tcp.th_flags = bitand(dis.tcp.th_flags, bitnot(parse_tcp_flags(fooling_options.tcp_flags_unset)))
@@ -928,12 +1005,16 @@ function apply_fooling(desync, dis, fooling_options)
 				end
 			end
 		end
-		if tonumber(fooling_options.tcp_ts) then
-			local idx = find_tcp_option(dis.tcp.options,TCP_KIND_TS)
-			if idx and (dis.tcp.options[idx].data and #dis.tcp.options[idx].data or 0)==8 then
-				dis.tcp.options[idx].data = bu32(u32add(u32(dis.tcp.options[idx].data),fooling_options.tcp_ts))..string.sub(dis.tcp.options[idx].data,5)
+		if fooling_options.tcp_ts then
+			if tonumber(fooling_options.tcp_ts) then
+				local idx = find_tcp_option(dis.tcp.options,TCP_KIND_TS)
+				if idx and (dis.tcp.options[idx].data and #dis.tcp.options[idx].data or 0)==8 then
+					dis.tcp.options[idx].data = bu32(u32add(u32(dis.tcp.options[idx].data),fooling_options.tcp_ts))..string.sub(dis.tcp.options[idx].data,5)
+				else
+					DLOG("apply_fooling: timestamp tcp option not present or invalid")
+				end
 			else
-				DLOG("apply_fooling: timestamp tcp option not present or invalid")
+				error("apply_fooling: tcp_ts requires increment parameter. there's no default value.")
 			end
 		end
 		if fooling_options.tcp_md5 then
@@ -944,7 +1025,7 @@ function apply_fooling(desync, dis, fooling_options)
 			end
 		end
 		if fooling_options.tcp_ts_up then
-			move_ts_top(dis.tcp.options)
+			move_ts_top()
 		end
 	end
 	if dis.ip6 then
@@ -1169,7 +1250,9 @@ function rawsend_dissect_segmented(desync, dis, mss, options)
 				len = #payload - pos + 1
 				if len > max_data then len = max_data end
 				if oob then
-					if urp>=pos and urp<(pos+len)then
+					if urp==0 and pos==1 then
+						discopy.tcp.th_flags = bitor(discopy.tcp.th_flags, TH_URG)
+					elseif urp>=pos and urp<(pos+len) then
 						discopy.tcp.th_flags = bitor(discopy.tcp.th_flags, TH_URG)
 						discopy.tcp.th_urp = urp-pos+1
 					else
@@ -1183,7 +1266,7 @@ function rawsend_dissect_segmented(desync, dis, mss, options)
 					-- stop if failed
 					return false
 				end
-				discopy.tcp.th_seq = discopy.tcp.th_seq + len
+				discopy.tcp.th_seq = u32add(discopy.tcp.th_seq, len)
 				pos = pos + len
 			end
 			return true
@@ -1352,9 +1435,9 @@ end
 function append_path(path,file)
 	return string.sub(path,#path,#path)=='/' and path..file or path.."/"..file
 end
-function writeable_file_name(filename)
+function writable_file_name(filename)
 	if is_absolute_path(filename) then return filename end
-	local writedir = os.getenv("WRITEABLE")
+	local writedir = os.getenv("WRITABLE")
 	if not writedir then return filename end
 	return append_path(writedir, filename)
 end
@@ -1548,11 +1631,11 @@ function tls_client_hello_mod(tls, options)
 			table.insert(tdis.handshake[TLS_HANDSHAKE_TYPE_CLIENT].dis.ext[idx_sni].dis.list, { name = options.sni_last, type = options.sni_snt_new } )
 		end
 	end
-	local tls = tls_reconstruct(tdis)
-	if not tls then
+	local rtls = tls_reconstruct(tdis)
+	if not rtls then
 		DLOG_ERR("tls_client_hello_mod: reconstruct error")
 	end
-	return tls
+	return rtls
 end
 
 -- checks if filename is gzip compressed
@@ -1619,9 +1702,9 @@ function gzip_file(filename, data, expected_ratio, level, memlevel, compress_blo
 	if not gz then
 		error("gzip_file: stream init error")
 	end
-	local off=1, block_size
+	local off=1
 	repeat
-		block_size = #data-off+1
+		local block_size = #data-off+1
 		if block_size>compress_block_size then block_size=compress_block_size end
 		local comp, eof = gzip_deflate(gz, string.sub(data,off,off+block_size-1), block_size / expected_ratio)
 		if not comp then
@@ -1641,7 +1724,7 @@ function readfile(filename)
 	if not f then
 		error("readfile: "..err)
 	end
-	local s,err = f:read("*a")
+	local s, err = f:read("*a")
 	f:close()
 	if err then
 		error("readfile: "..err)
@@ -1659,12 +1742,13 @@ function writefile(filename, data)
 	if not f then
 		error("writefile: "..err)
 	end
-	local s,err = f:write(data)
+	local s, err = f:write(data)
 	f:close()
 	if not s then
 		error("writefile: "..err)
 	end
 end
+
 
 -- DISSECTORS
 
@@ -1679,7 +1763,7 @@ function http_dissect_header(header)
 end
 -- make table with structured http header representation
 function http_dissect_headers(http, pos)
-	local eol,pnext,header,value,idx,headers,pos_endheader,pos_startvalue,pos_headers_end
+	local eol,pnext,header,value,headers,pos_endheader,pos_startvalue,pos_headers_end
 	headers={}
 	while pos do
 		eol,pnext = find_next_line(http,pos)
@@ -2243,7 +2327,8 @@ function tls_dissect_ext(ext)
 		return left, off
 	end
 
-	local dis={}, off, len, left
+	local dis={}
+	local off, len, left
 
 	ext.dis = nil
 
